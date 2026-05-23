@@ -1,0 +1,168 @@
+/* src/styles/onboarding.css */
+
+/* Main popover container with gradient theme */
+.goalgrid-onboarding.driver-popover {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  border-radius: 16px;
+  color: white;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  max-width: 400px;
+  padding: 0;
+}
+
+/* Title styling */
+.goalgrid-onboarding .driver-popover-title {
+  color: #a855f7;
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding: 20px 20px 0 20px;
+}
+
+/* Description text */
+.goalgrid-onboarding .driver-popover-description {
+  color: #e0e7ff;
+  font-size: 15px;
+  line-height: 1.6;
+  padding: 0 20px 16px 20px;
+}
+
+/* Footer with buttons */
+.goalgrid-onboarding .driver-popover-footer {
+  padding: 16px 20px;
+  border-top: 1px solid rgba(168, 85, 247, 0.2);
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Progress text (e.g., "1 of 6") */
+.goalgrid-onboarding .driver-popover-progress-text {
+  color: #a855f7;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Navigation buttons */
+.goalgrid-onboarding .driver-popover-footer button {
+  background: #a855f7;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 80px;
+}
+
+.goalgrid-onboarding .driver-popover-footer button:hover {
+  background: #9333ea;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(168, 85, 247, 0.4);
+}
+
+.goalgrid-onboarding .driver-popover-footer button:active {
+  transform: translateY(0);
+}
+
+/* Previous button - secondary style */
+.goalgrid-onboarding .driver-popover-prev-btn {
+  background: rgba(168, 85, 247, 0.2);
+  color: #e0e7ff;
+}
+
+.goalgrid-onboarding .driver-popover-prev-btn:hover {
+  background: rgba(168, 85, 247, 0.3);
+}
+
+/* Close button (if enabled) */
+.goalgrid-onboarding .driver-popover-close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #e0e7ff;
+  transition: all 0.2s;
+}
+
+.goalgrid-onboarding .driver-popover-close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Overlay background */
+.driver-overlay {
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(2px);
+}
+
+/* Highlighted element styling */
+.driver-highlighted-element {
+  box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.5),
+              0 0 20px rgba(168, 85, 247, 0.3);
+  border-radius: 8px;
+}
+
+/* Arrow pointing to element */
+.goalgrid-onboarding .driver-popover-arrow {
+  border-color: #312e81;
+}
+
+.goalgrid-onboarding .driver-popover-arrow-side-top.driver-popover-arrow {
+  border-top-color: #312e81;
+}
+
+.goalgrid-onboarding .driver-popover-arrow-side-bottom.driver-popover-arrow {
+  border-bottom-color: #312e81;
+}
+
+.goalgrid-onboarding .driver-popover-arrow-side-left.driver-popover-arrow {
+  border-left-color: #312e81;
+}
+
+.goalgrid-onboarding .driver-popover-arrow-side-right.driver-popover-arrow {
+  border-right-color: #312e81;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.goalgrid-onboarding.driver-popover {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 640px) {
+  .goalgrid-onboarding.driver-popover {
+    max-width: 90vw;
+    margin: 10px;
+  }
+  
+  .goalgrid-onboarding .driver-popover-title {
+    font-size: 18px;
+  }
+  
+  .goalgrid-onboarding .driver-popover-description {
+    font-size: 14px;
+  }
+}

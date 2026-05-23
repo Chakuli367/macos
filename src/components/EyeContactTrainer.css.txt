@@ -1,0 +1,326 @@
+/* ==============================
+   EyeContactTrainer.css
+   Full Working Version with Variables
+   ============================== */
+
+/* ---------- Variables ---------- */
+:root {
+  --background-gradient: linear-gradient(to bottom right, #e0f2ff, #cfe0fc);
+  --border-color: #a0aec0;
+  --progress-bg: #e2e8f0;
+  --progress-fill: #4299e1;
+  --circle-border: #4299e1;
+  --circle-bg: #f0f9ff;
+  --fill-gradient: linear-gradient(to top, #4299e1, #63b3ed);
+  --wave-gradient: linear-gradient(to bottom, #4299e1, transparent);
+  --center-point-color: #2b6cb0;
+  --tip-border: #f6e05e;
+  --tip-bg: #fefcbf;
+  --check-color: #38a169;
+  --button-bg: #4299e1;
+  --button-hover-bg: #2b6cb0;
+  --button-text-color: #fff;
+  --pause-button-bg: #e53e3e;
+  --pause-button-hover-bg: #c53030;
+  --reset-button-bg: #718096;
+  --reset-button-hover-bg: #4a5568;
+}
+
+/* ---------- Main Screen ---------- */
+.eye-contact-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--background-gradient);
+  padding: 1rem;
+  font-family: sans-serif;
+}
+
+/* ---------- Name Input ---------- */
+.name-input-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #fff;
+  padding: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.eye-icon {
+  width: 3rem;
+  height: 3rem;
+  color: #4299e1;
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+
+.subtitle {
+  font-size: 1rem;
+  color: #4a5568;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.input-wrapper {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1rem;
+  width: 100%;
+}
+
+.input-label {
+  margin-bottom: 0.25rem;
+  font-weight: 500;
+}
+
+.text-input {
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  width: 100%;
+  outline: none;
+}
+
+.text-input:focus {
+  border-color: var(--progress-fill);
+}
+
+/* ---------- Buttons ---------- */
+.start-button,
+.control-buttons button {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease-in-out;
+}
+
+.start-button {
+  background: var(--button-bg);
+  color: var(--button-text-color);
+}
+
+.start-button:hover {
+  background: var(--button-hover-bg);
+}
+
+.control-buttons button {
+  color: var(--button-text-color);
+}
+
+.control-buttons .pause-button {
+  background: var(--pause-button-bg);
+}
+
+.control-buttons .pause-button:hover {
+  background: var(--pause-button-hover-bg);
+}
+
+.control-buttons .reset-button {
+  background: var(--reset-button-bg);
+}
+
+.control-buttons .reset-button:hover {
+  background: var(--reset-button-hover-bg);
+}
+
+/* ---------- Progress ---------- */
+.progress-container {
+  width: 100%;
+  max-width: 24rem;
+  margin-bottom: 1rem;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 0.5rem;
+  background: var(--progress-bg);
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--progress-fill);
+  transition: width 0.3s ease-out;
+}
+
+.progress-text {
+  text-align: center;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+}
+
+/* ---------- Practice Container ---------- */
+.practice-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 28rem;
+}
+
+/* ---------- Instructions ---------- */
+.instructions {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.instructions-title {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.instructions-subtitle {
+  font-size: 1rem;
+  margin-top: 0.5rem;
+  color: #4a5568;
+}
+
+/* ---------- Circle & Animation ---------- */
+.circle-container {
+  position: relative;
+  margin: 1rem 0;
+}
+
+.circle-frame {
+  position: relative;
+  width: 16rem;
+  height: 16rem;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 0.25rem solid var(--circle-border);
+  background: var(--circle-bg);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.fill-circle {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: var(--fill-gradient);
+  transition: height 0.1s linear;
+}
+
+.wave-effect {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2rem;
+  background: var(--wave-gradient);
+  animation: wave 1s ease-in-out infinite;
+}
+
+.center-point {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1.5rem;
+  height: 1.5rem;
+  background: var(--center-point-color);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.eye-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.eye-icon-large {
+  width: 6rem;
+  height: 6rem;
+}
+
+/* ---------- Phase Indicator ---------- */
+.phase-indicator {
+  margin-top: 1rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* ---------- Tip Box ---------- */
+.tip-box {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  border-left: 0.25rem solid var(--tip-border);
+  background: var(--tip-bg);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* ---------- Control Buttons ---------- */
+.control-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+/* ---------- Success Message ---------- */
+.success-message {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.check-icon {
+  width: 2rem;
+  height: 2rem;
+  color: var(--check-color);
+}
+
+/* ---------- Confetti ---------- */
+.confetti-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.confetti-piece {
+  position: absolute;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  animation: confettiFall 1.5s ease-out forwards;
+}
+
+/* ---------- Animations ---------- */
+@keyframes wave {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-0.5rem); }
+}
+
+@keyframes confettiFall {
+  to {
+    transform: translateY(100vh) rotate(360deg);
+    opacity: 0;
+  }
+}

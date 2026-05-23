@@ -1,0 +1,431 @@
+// seedSampleData.js
+// Run this file to create sample data for testing
+// Usage: node seedSampleData.js YOUR_USER_ID
+
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  collection,
+  serverTimestamp,
+  writeBatch 
+} from 'firebase/firestore';
+
+// Your Firebase config
+const firebaseConfig = {
+  apiKey: "AIzaSyBNCXIOAX2HUdeLvUxkTJh7DVbv8JU485s",
+  authDomain: "goalgrid-c5e9c.firebaseapp.com",
+  projectId: "goalgrid-c5e9c",
+  storageBucket: "goalgrid-c5e9c.firebasestorage.app",
+  messagingSenderId: "544004357501",
+  appId: "1:544004357501:web:4b81a3686422b28534e014",
+  measurementId: "G-BJQMLK9JJ1",
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// ============================================
+// SAMPLE DATA GENERATOR
+// ============================================
+
+async function seedSampleData(userId) {
+  console.log('🌱 Starting to seed sample data for user:', userId);
+
+  try {
+    // 1. CREATE USER PROFILE
+    console.log('📝 Creating user profile...');
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, {
+      uid: userId,
+      email: 'testuser@example.com',
+      name: 'Alex Johnson',
+      username: 'alexj',
+      avatar: 'https://ui-avatars.com/api/?name=Alex+Johnson&background=a855f7&color=fff',
+      bio: 'On a journey to improve my social skills!',
+      status: 'Learning and growing every day',
+      mood: '🚀',
+      league: 'BRONZE',
+      isOnline: true,
+      isPremium: false,
+      isVerified: false,
+      currentArchetype: 'observer',
+      futureArchetype: 'connector',
+      interests: ['networking', 'public-speaking', 'leadership'],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    console.log('✅ User profile created');
+
+    // 2. CREATE USER STATS
+    console.log('📊 Creating user stats...');
+    const statsRef = doc(db, 'users', userId, 'stats', 'current');
+    await setDoc(statsRef, {
+      uid: userId,
+      totalXP: 9500,
+      weeklyXP: 450,
+      monthlyXP: 2100,
+      streak: 12,
+      longestStreak: 15,
+      lastStreakDate: new Date(),
+      tasksCompleted: 23,
+      lessonsCompleted: 8,
+      level: 19,
+      coins: 340,
+      gems: 12,
+      crowns: 5,
+      combo: 3,
+      maxCombo: 7,
+      studyTime: 1240,
+      completionRate: 78,
+      rank: 142,
+      weeklyRank: 28,
+      monthlyRank: 89,
+      friendsCount: 6,
+      groupsCount: 2,
+      achievementsCount: 4,
+      challengesCompleted: 3,
+      postsCount: 12,
+      reactionsReceived: 45
+    });
+    console.log('✅ User stats created');
+
+    // 3. CREATE SOCIAL TRAITS
+    console.log('💡 Creating social traits...');
+    const traitsRef = doc(db, 'users', userId, 'socialSkills', 'traits');
+    await setDoc(traitsRef, {
+      conversation: { 
+        current: 45, 
+        future: 85, 
+        icon: 'MessageCircle', 
+        color: '#a855f7' 
+      },
+      listening: { 
+        current: 60, 
+        future: 90, 
+        icon: 'Heart', 
+        color: '#c084fc' 
+      },
+      confidence: { 
+        current: 35, 
+        future: 80, 
+        icon: 'Zap', 
+        color: '#d946ef' 
+      },
+      networking: { 
+        current: 40, 
+        future: 75, 
+        icon: 'Users', 
+        color: '#9333ea' 
+      },
+      empathy: { 
+        current: 70, 
+        future: 95, 
+        icon: 'Sparkles', 
+        color: '#e879f9' 
+      },
+      updatedAt: serverTimestamp()
+    });
+    console.log('✅ Social traits created');
+
+    // 4. CREATE SOCIAL SKILLS (using batch)
+    console.log('🎯 Creating social skills...');
+    let batch = writeBatch(db);
+    
+    const skills = [
+      { 
+        name: 'Conversation Initiation', 
+        level: 45, 
+        xp: 2250, 
+        maxXp: 5000,
+        color: '#a855f7', 
+        trend: [30, 32, 35, 38, 40, 45] 
+      },
+      { 
+        name: 'Listening & Empathy', 
+        level: 70, 
+        xp: 3500, 
+        maxXp: 5000,
+        color: '#c084fc', 
+        trend: [55, 58, 62, 65, 68, 70] 
+      },
+      { 
+        name: 'Confidence & Assertiveness', 
+        level: 35, 
+        xp: 1750, 
+        maxXp: 5000,
+        color: '#d946ef', 
+        trend: [20, 23, 26, 29, 32, 35] 
+      },
+      { 
+        name: 'Networking', 
+        level: 40, 
+        xp: 2000, 
+        maxXp: 5000,
+        color: '#9333ea', 
+        trend: [25, 28, 32, 35, 38, 40] 
+      }
+    ];
+
+    skills.forEach(skill => {
+      const skillRef = doc(db, 'users', userId, 'socialSkills', 'skills', skill.name);
+      batch.set(skillRef, {
+        ...skill,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    });
+
+    await batch.commit();
+    console.log('✅ Social skills created');
+
+    // 5. CREATE SOCIAL ACTIONS
+    console.log('⚡ Creating social actions...');
+    batch = writeBatch(db);
+
+    const actions = [
+      {
+        action: 'Complimented a friend',
+        skill: 'Empathy',
+        xp: 50,
+        difficulty: 'Easy',
+        date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000) // 1 day ago
+      },
+      {
+        action: 'Started conversation with stranger',
+        skill: 'Conversation',
+        xp: 100,
+        difficulty: 'Hard',
+        date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+      },
+      {
+        action: 'Active listening in group',
+        skill: 'Listening',
+        xp: 75,
+        difficulty: 'Medium',
+        date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
+      },
+      {
+        action: 'Shared personal story',
+        skill: 'Confidence',
+        xp: 80,
+        difficulty: 'Medium',
+        date: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000)
+      },
+      {
+        action: 'Connected two friends',
+        skill: 'Networking',
+        xp: 90,
+        difficulty: 'Hard',
+        date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000)
+      },
+      {
+        action: 'Gave constructive feedback',
+        skill: 'Confidence',
+        xp: 70,
+        difficulty: 'Medium',
+        date: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)
+      }
+    ];
+
+    actions.forEach((action, idx) => {
+      const actionRef = doc(collection(db, 'users', userId, 'socialActions'));
+      batch.set(actionRef, {
+        id: actionRef.id,
+        userId,
+        ...action,
+        createdAt: action.date
+      });
+    });
+
+    await batch.commit();
+    console.log('✅ Social actions created');
+
+    // 6. CREATE MILESTONES
+    console.log('🏆 Creating milestones...');
+    batch = writeBatch(db);
+
+    const milestones = [
+      { name: 'First Compliment', completed: true, date: 'Sept 1', order: 1 },
+      { name: 'Group Activity', completed: true, date: 'Sept 10', order: 2 },
+      { name: '511 Conversations', completed: true, date: 'Sept 15', order: 3 },
+      { name: 'Networking Event', completed: false, date: 'Upcoming', order: 4 },
+      { name: 'Public Speaking', completed: false, date: 'Upcoming', order: 5 }
+    ];
+
+    milestones.forEach(milestone => {
+      const milestoneRef = doc(collection(db, 'users', userId, 'socialMilestones'));
+      batch.set(milestoneRef, {
+        id: milestoneRef.id,
+        ...milestone,
+        createdAt: serverTimestamp()
+      });
+    });
+
+    await batch.commit();
+    console.log('✅ Milestones created');
+
+    // 7. CREATE CHALLENGES
+    console.log('🎯 Creating challenges...');
+    batch = writeBatch(db);
+
+    const challenges = [
+      {
+        title: 'Start 3 conversations with strangers',
+        xp: 300,
+        streak: 2,
+        badge: '🗣️',
+        target: 3,
+        progress: 2,
+        completed: false
+      },
+      {
+        title: 'Give 5 genuine compliments',
+        xp: 150,
+        streak: 1,
+        badge: '💬',
+        target: 5,
+        progress: 4,
+        completed: false
+      },
+      {
+        title: 'Attend a networking event',
+        xp: 500,
+        streak: 0,
+        badge: '🎯',
+        target: 1,
+        progress: 0,
+        completed: false
+      },
+      {
+        title: 'Practice active listening for 1 week',
+        xp: 400,
+        streak: 3,
+        badge: '👂',
+        target: 7,
+        progress: 3,
+        completed: false
+      }
+    ];
+
+    challenges.forEach(challenge => {
+      const challengeRef = doc(collection(db, 'users', userId, 'socialChallenges'));
+      batch.set(challengeRef, {
+        id: challengeRef.id,
+        ...challenge,
+        createdAt: serverTimestamp()
+      });
+    });
+
+    await batch.commit();
+    console.log('✅ Challenges created');
+
+    // 8. CREATE SAMPLE REFLECTIONS
+    console.log('💭 Creating reflections...');
+    batch = writeBatch(db);
+
+    const reflections = [
+      {
+        mood: 'good',
+        text: 'Made progress this week with conversations. Still nervous but getting better!',
+        weekOf: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      },
+      {
+        mood: 'amazing',
+        text: 'Had an amazing networking event. Met 5 new people and exchanged contacts!',
+        weekOf: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
+      }
+    ];
+
+    reflections.forEach(reflection => {
+      const reflectionRef = doc(collection(db, 'users', userId, 'socialReflections'));
+      batch.set(reflectionRef, {
+        id: reflectionRef.id,
+        userId,
+        ...reflection,
+        createdAt: serverTimestamp()
+      });
+    });
+
+    await batch.commit();
+    console.log('✅ Reflections created');
+
+    // 9. CREATE USER SETTINGS
+    console.log('⚙️ Creating user settings...');
+    const settingsRef = doc(db, 'users', userId, 'settings', 'preferences');
+    await setDoc(settingsRef, {
+      uid: userId,
+      notifications: {
+        email: true,
+        push: true,
+        friendRequests: true,
+        messages: true,
+        achievements: true,
+        challenges: true,
+        groupActivity: true,
+        weeklyReport: true
+      },
+      privacy: {
+        profileVisibility: 'public',
+        showOnlineStatus: true,
+        showActivity: true,
+        allowFriendRequests: true,
+        allowMessages: 'everyone'
+      },
+      preferences: {
+        theme: 'dark',
+        language: 'en',
+        timezone: 'UTC',
+        dailyGoalXP: 100,
+        studyReminder: true,
+        reminderTime: '09:00'
+      }
+    });
+    console.log('✅ User settings created');
+
+    console.log('\n🎉 SUCCESS! Sample data created for user:', userId);
+    console.log('\n📋 Summary:');
+    console.log('  ✓ User profile');
+    console.log('  ✓ User stats');
+    console.log('  ✓ 5 Social traits');
+    console.log('  ✓ 4 Social skills');
+    console.log('  ✓ 6 Social actions');
+    console.log('  ✓ 5 Milestones');
+    console.log('  ✓ 4 Challenges');
+    console.log('  ✓ 2 Reflections');
+    console.log('  ✓ User settings');
+    console.log('\n✨ You can now log in and view your profile!\n');
+
+  } catch (error) {
+    console.error('❌ Error seeding data:', error);
+    throw error;
+  }
+}
+
+// ============================================
+// RUN THE SCRIPT
+// ============================================
+
+// Get userId from command line argument or use default
+const userId = process.argv[2] || 'HmSkqrt9r8OcvZUOIbRcwBTBpuP2';
+
+console.log('╔══════════════════════════════════════╗');
+console.log('║   Social Skills Sample Data Seeder   ║');
+console.log('╚══════════════════════════════════════╝\n');
+
+seedSampleData(userId)
+  .then(() => {
+    console.log('✅ All done! Exiting...');
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error('❌ Failed to seed data:', error);
+    process.exit(1);
+  });
+
+// ============================================
+// ALTERNATIVE: FUNCTION EXPORT FOR USE IN APP
+// ============================================
+
+export { seedSampleData };

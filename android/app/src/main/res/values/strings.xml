@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Connect</string>
+    <string name="title_activity_main">Connect</string>
+    <string name="package_name">app.connect.mobile</string>
+    <string name="server_client_id">544004357501-7g91utea0bih0eehon6acmc6p84f5thl.apps.googleusercontent.com</string>
+    <string name="custom_url_scheme">app.connect.mobile</string>
+</resources>

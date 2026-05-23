@@ -1,0 +1,18 @@
+// src/mentor/mentorScriptProductsPage.ts
+
+export const mentorScriptProductsPage = [
+  {
+    target: '[data-tour="find-friends-btn"]',
+    text: 'Welcome to your community hub! This is where you can connect with others on the same journey.',
+  },
+  {
+    target: '#community-section',
+    text: 'Join our community to share experiences and get support from others.',
+    waitForSignal: true,        // ✅ Wait for OptimizedSupport to load
+    signal: 'COMMUNITY_VIEWED',  // ✅ Signal sent when component loads
+  },
+  {
+    target: '#irl-connections-hub',
+    text: 'Click here to find local meetups and practice groups near you.',
+  },
+];

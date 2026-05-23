@@ -1,0 +1,35 @@
+/* Make the overlay VERY dark and ABOVE everything */
+#driver-overlay {
+  background: rgba(0, 0, 0, 0.85) !important;
+  z-index: 999998 !important; /* MUCH HIGHER */
+  position: fixed !important;
+}
+
+/* Make highlighted element SUPER visible and ABOVE overlay */
+#driver-highlighted-element-stage {
+  background: transparent !important;
+  outline: none !important;
+  z-index: 999999 !important; /* MUCH HIGHER */
+  position: absolute !important;
+  
+  /* Add a glowing ring around highlighted element */
+  box-shadow: 
+    0 0 0 4px rgba(168, 85, 247, 0.8),
+    0 0 0 8px rgba(251, 191, 36, 0.6),
+    0 0 30px rgba(168, 85, 247, 0.8) !important;
+  
+  border-radius: 12px !important;
+  animation: pulse-glow 2s ease-in-out infinite !important;
+}
+
+/* Popover styling - ABOVE everything */
+.driver-popover {
+  background: linear-gradient(135deg, #581c87, #7c3aed) !important;
+  color: white !important;
+  border-radius: 16px !important;
+  padding: 24px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5) !important;
+  max-width: 360px !important;
+  z-index: 1000000 !important; /* MUCH HIGHER */
+  position: fixed !important;
+}

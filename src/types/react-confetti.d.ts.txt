@@ -1,0 +1,15 @@
+declare module 'react-confetti' {
+  import { ComponentType } from 'react';
+
+  interface ConfettiProps {
+    width?: number;
+    height?: number;
+    recycle?: boolean;
+    numberOfPieces?: number;
+    gravity?: number;
+    wind?: number;
+  }
+
+  const Confetti: ComponentType<ConfettiProps>;
+  export default Confetti;
+}

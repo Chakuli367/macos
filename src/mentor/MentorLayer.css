@@ -1,0 +1,56 @@
+.mentor-layer {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  z-index: 9999; /* above all content */
+  pointer-events: none; /* allow clicks through except buttons */
+}
+
+.mentor-bubble {
+  pointer-events: auto; /* allow clicks on buttons */
+  background: linear-gradient(135deg,#facc15,#fde68a,#f59e0b,#facc15);
+  padding: 16px 24px;
+  border-radius: 24px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  max-width: 280px;
+  color: #111;
+  font-weight: bold;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: floatBounce 2s infinite;
+}
+
+.mentor-text {
+  font-size: 14px;
+}
+
+.mentor-buttons {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mentor-btn {
+  padding: 6px 12px;
+  background: #6b21a8; /* deep purple */
+  color: white;
+  font-weight: bold;
+  border-radius: 12px;
+  transition: transform 0.1s;
+}
+
+.mentor-btn:hover {
+  transform: translateY(-2px);
+  background: #7c3aed;
+}
+
+.mentor-skip {
+  background: #e5e7eb;
+  color: #111;
+}
+
+@keyframes floatBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}

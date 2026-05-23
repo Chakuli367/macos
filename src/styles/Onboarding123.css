@@ -1,0 +1,110 @@
+/* ================================
+   GOALGRID – CUSTOM ONBOARDING UI
+   Overrides driver.js default styles
+   ================================ */
+
+/* Popover container */
+.driver-popover {
+  background: linear-gradient(180deg, #2d1b69 0%, #1a0f3d 100%);
+  border-radius: 18px;
+  border: 2px solid #7c3aed;
+  box-shadow:
+    0 12px 30px rgba(124, 58, 237, 0.45),
+    0 0 0 2px rgba(124, 58, 237, 0.4);
+  padding: 16px 18px;
+  max-width: 320px;
+}
+
+/* Arrow */
+.driver-popover-arrow {
+  border-color: #2d1b69 !important;
+}
+
+/* Title */
+.driver-popover-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #ffffff;
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+
+/* Description text */
+.driver-popover-description {
+  font-size: 14px;
+  line-height: 1.45;
+  color: #e9d5ff;
+}
+
+/* Progress indicator */
+.driver-popover-progress-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #c4b5fd;
+}
+
+/* Buttons container */
+.driver-popover-footer {
+  margin-top: 12px;
+  gap: 8px;
+}
+
+/* Base button */
+.driver-popover-footer button {
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+/* Primary (Next / Done) */
+.driver-popover-footer button.driver-next-btn,
+.driver-popover-footer button.driver-done-btn {
+  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 0 #7f1d1d;
+}
+
+.driver-popover-footer button.driver-next-btn:hover,
+.driver-popover-footer button.driver-done-btn:hover {
+  transform: translateY(1px);
+  box-shadow: 0 3px 0 #7f1d1d;
+}
+
+/* Secondary (Previous) */
+.driver-popover-footer button.driver-prev-btn {
+  background: #312e81;
+  color: #ddd6fe;
+}
+
+/* Close button */
+.driver-popover-footer button.driver-close-btn {
+  background: transparent;
+  color: #a78bfa;
+}
+
+/* Highlighted element ring */
+.driver-highlighted-element {
+  box-shadow:
+    0 0 0 4px rgba(168, 85, 247, 0.6),
+    0 0 0 9999px rgba(0, 0, 0, 0.55) !important;
+  border-radius: 12px;
+}
+
+/* Disable ugly blur */
+.driver-active-element {
+  filter: none !important;
+}
+
+/* Custom variant for Interaction Planner */
+.anxiety-tracker-popover {
+  border-color: #ef4444;
+}
+
+.anxiety-tracker-popover .driver-popover-title {
+  color: #fecaca;
+}
+

@@ -1,0 +1,29 @@
+import React from "react";
+import { BottomNavigation, BottomNavigationAction, Paper, useMediaQuery, useTheme } from "@mui/material";
+import { Home, Calendar, Star } from "lucide-react";
+
+export default function MobileNav() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const [value, setValue] = React.useState(0);
+
+  if (!isMobile) return null; // hide on larger screens
+
+  return (
+    <Paper 
+      sx={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1000 }} 
+      elevation={3}
+    >
+      <BottomNavigation
+        showLabels
+        value={value}
+        onChange={(event, newValue) => setValue(newValue)}
+        sx={{ backgroundColor: "#1e1e2f", color: "white" }}
+      >
+        <BottomNavigationAction label="Home" icon={<Home size={20} />} sx={{ color: "white" }} />
+        <BottomNavigationAction label="Timeline" icon={<Calendar size={20} />} sx={{ color: "white" }} />
+        <BottomNavigationAction label="Achievements" icon={<Star size={20} />} sx={{ color: "white" }} />
+      </BottomNavigation>
+    </Paper>
+  );
+}
