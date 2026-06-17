@@ -1,14 +1,24 @@
-
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Mic, MicOff, Loader2, CheckCircle, Volume2, VolumeX,
   Keyboard, Send, X, Wind, Brain, Heart, Zap, ChevronRight,
-  RotateCcw, ArrowRight,
+  RotateCcw, ArrowRight, BookOpen, Dumbbell, MessageSquare,
 } from 'lucide-react';
+import AvatarCanvas from 'src/components/AvatarCanvas';
+
 
 const BACKEND = 'https://theraplyendpoint.onrender.com';
-const PHASE_LABELS = ['', 'Understanding', 'Challenging', 'Planning', 'Committing'];
 const MIN_RECORDING_MS = 400;
+
+// ── 5-part program parts ─────────────────────────────────────
+// 1: Check-in  2: Review  3: Psychoeducation  4: Exercise  5: Commit
+const PART_LABELS: Record<number, string> = {
+  1: 'Check-in',
+  2: 'Review',
+  3: 'Learn',
+  4: 'Exercise',
+  5: 'Commit',
+};
 
 const T = {
   bg:            '#0a0612',
@@ -29,22 +39,35 @@ const T = {
   textMuted:     'rgba(139,116,240,0.4)',
 };
 
+
+const extractMessage = (text: string): string => {
+  if (!text) return '';
+  try {
+    const parsed = JSON.parse(text);
+    return parsed.message || text;
+  } catch {
+    return text;
+  }
+};
+
 type Mode = 'idle' | 'listening' | 'thinking' | 'speaking';
+
+// Which part of the 5-part session arc we're in
+type SessionPart = 1 | 2 | 3 | 4 | 5;
 
 interface Message {
   role: 'user' | 'ai';
   text: string;
   timestamp: number;
+  part?: SessionPart;
 }
 
-// ─── Exercise types ────────────────────────────────────────────────────────
+// ─── Exercise types (unchanged from old frontend) ──────────────────
 
 interface BreathingPhase { label: string; duration: number; color: string; }
 interface GroundingStep  { count: number; sense: string; icon: string; prompt: string; }
 interface ThoughtField   { id: string; label: string; type: string; placeholder?: string; rows?: number; min?: number; max?: number; step?: number; unit?: string; }
 interface BodyZone       { id: string; label: string; prompt: string; }
-interface FearStep       { situation: string; anxiety: number; }
-interface ValuesDomain   { importance: number; living_it: number; }
 
 interface ExerciseConfig {
   phases?:        BreathingPhase[];
@@ -60,21 +83,17 @@ interface ExerciseConfig {
 }
 
 interface Exercise {
-  name:       string;
-  description:string;
-  config:     ExerciseConfig;
-  inputs:     string[];
-  duration_s: number;
+  name:        string;
+  description: string;
+  config:      ExerciseConfig;
+  inputs:      string[];
+  duration_s:  number;
 }
 
-interface PrescribeResponse {
-  success:       boolean;
-  exercise_type: string;
-  exercise:      Exercise;
-  intro_speech:  string;
-  anxiety_pre:   number;
-  audio_b64?:    string;
-  session_id?:   string;
+interface Psychoeducation {
+  title:       string;
+  body:        string;
+  key_insight: string;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -82,26 +101,40 @@ interface PrescribeResponse {
 // ══════════════════════════════════════════════════════════════════════════
 
 export default function VoiceTherapySession({ user, onPlanCreated, showNotification }: any) {
-  const [mode, setMode]                       = useState<Mode>('idle');
-  const [sessionId, setSessionId]             = useState<string | null>(null);
-  const [phase, setPhase]                     = useState(1);
-  const [sessionComplete, setSessionComplete] = useState(false);
-  const [extractedData, setExtractedData]     = useState<any>(null);
-  const [messages, setMessages]               = useState<Message[]>([]);
-  const [isMuted, setIsMuted]                 = useState(false);
-  const [creatingPlan, setCreatingPlan]       = useState(false);
-  const [planCreated, setPlanCreated]         = useState(false);
-  const [error, setError]                     = useState('');
-  const [orbLevel, setOrbLevel]               = useState(1);
-  const [showTextInput, setShowTextInput]     = useState(false);
-  const [textDraft, setTextDraft]             = useState('');
-  const [autoStarted, setAutoStarted]         = useState(false);
-  const [lastBlob, setLastBlob]               = useState<Blob | null>(null);
+  const [mode, setMode]                         = useState<Mode>('idle');
 
-  // ── Exercise state ─────────────────────────────────────────
-  const [exerciseMode, setExerciseMode]       = useState(false);
-  const [exerciseData, setExerciseData]       = useState<PrescribeResponse | null>(null);
-  const [exAnxietyPre, setExAnxietyPre]       = useState(5);
+  // ── Structured session state ─────────────────────────────────
+  const [sessionId, setSessionId]               = useState<string | null>(null);
+  const [currentPart, setCurrentPart]           = useState<SessionPart>(1);
+  const [sessionComplete, setSessionComplete]   = useState(false);
+  const [programComplete, setProgramComplete]   = useState(false);
+  const [commitment, setCommitment]             = useState('');
+  const [weekInfo, setWeekInfo]                 = useState<{ week: number; session_number: number; title?: string; theme?: string } | null>(null);
+
+  // ── Check-in (Part 1) ─────────────────────────────────────────
+  const [checkinScore, setCheckinScore]         = useState<number>(5);
+  const [checkinNote, setCheckinNote]           = useState('');
+  const [checkinSubmitted, setCheckinSubmitted] = useState(false);
+  const [openingMessage, setOpeningMessage]     = useState('');
+
+  // ── Psychoeducation (Part 3) ──────────────────────────────────
+  const [psychoed, setPsychoed]                 = useState<Psychoeducation | null>(null);
+
+  // ── Exercise (Part 4) ─────────────────────────────────────────
+  const [exerciseMode, setExerciseMode]         = useState(false);
+  const [exerciseData, setExerciseData]         = useState<{ exercise_type: string; exercise: Exercise; intro_message?: string; audio_b64?: string } | null>(null);
+  const [exAnxietyPre, setExAnxietyPre]         = useState(5);
+
+  // ── Shared ────────────────────────────────────────────────────
+  const [messages, setMessages]                 = useState<Message[]>([]);
+  const [isMuted, setIsMuted]                   = useState(false);
+  const [error, setError]                       = useState('');
+  const [orbLevel, setOrbLevel]                 = useState(1);
+  const [showTextInput, setShowTextInput]       = useState(false);
+  const [textDraft, setTextDraft]               = useState('');
+  const [autoStarted, setAutoStarted]           = useState(false);
+  const [lastBlob, setLastBlob]                 = useState<Blob | null>(null);
+  const [sessionLoading, setSessionLoading]     = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef   = useRef<Blob[]>([]);
@@ -113,9 +146,11 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
   const scrollAnchorRef  = useRef<HTMLDivElement | null>(null);
   const textInputRef     = useRef<HTMLInputElement | null>(null);
   const sessionIdRef     = useRef<string | null>(null);
+  const currentPartRef   = useRef<SessionPart>(1);
   const modeRef          = useRef<Mode>('idle');
 
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  useEffect(() => { currentPartRef.current = currentPart; }, [currentPart]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
 
   useEffect(() => {
@@ -126,10 +161,11 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
     if (showTextInput) setTimeout(() => textInputRef.current?.focus(), 100);
   }, [showTextInput]);
 
+  // Auto-start: fetch program status then start the session
   useEffect(() => {
     if (autoStarted) return;
     setAutoStarted(true);
-    setTimeout(() => triggerAIGreeting(), 800);
+    setTimeout(() => startProgramSession(), 800);
   }, []); // eslint-disable-line
 
   useEffect(() => {
@@ -140,14 +176,12 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
     };
   }, []);
 
-  // ── Greeting ───────────────────────────────────────────────
-  const triggerAIGreeting = async () => {
-    const greeting = "Hi, I'm really glad you're here. I want you to know this is a safe space — just us. So... what's been sitting heaviest on your mind lately?";
-    appendMessage('ai', greeting);
-    await speakText(greeting, 0);
+  // ── Helpers ─────────────────────────────────────────────────
+  const appendMessage = (role: 'user' | 'ai', text: string, part?: SessionPart) => {
+    setMessages(prev => [...prev, { role, text, timestamp: Date.now(), part }]);
   };
 
-  // ── AnalyserNode ───────────────────────────────────────────
+  // ── AnalyserNode ─────────────────────────────────────────────
   const startAnalyser = (stream: MediaStream) => {
     try {
       const ctx      = new AudioContext();
@@ -165,7 +199,7 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
         animFrameRef.current = requestAnimationFrame(tick);
       };
       animFrameRef.current = requestAnimationFrame(tick);
-    } catch { /* no analyser, orb still works */ }
+    } catch { /* silent */ }
   };
 
   const stopAnalyser = () => {
@@ -174,7 +208,7 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
     setOrbLevel(1);
   };
 
-  // ── Audio ──────────────────────────────────────────────────
+  // ── Audio ────────────────────────────────────────────────────
   const stopAudio = () => {
     if (audioRef.current) {
       audioRef.current.pause();
@@ -183,41 +217,30 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
     }
   };
 
-  const playAudioB64 = (b64: string): Promise<void> => {
-    return new Promise((resolve) => {
+  const playAudioB64 = (b64: string): Promise<void> =>
+    new Promise((resolve) => {
       stopAudio();
       const binary = atob(b64);
       const bytes  = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const blob = new Blob([bytes], { type: 'audio/mpeg' });
-      const url  = URL.createObjectURL(blob);
+      const blob  = new Blob([bytes], { type: 'audio/mpeg' });
+      const url   = URL.createObjectURL(blob);
       const audio = new Audio(url);
       audioRef.current = audio;
       audio.onended = () => { URL.revokeObjectURL(url); audioRef.current = null; resolve(); };
       audio.onerror = () => { URL.revokeObjectURL(url); audioRef.current = null; resolve(); };
       audio.play().catch(() => resolve());
     });
-  };
 
-  const appendMessage = (role: 'user' | 'ai', text: string) => {
-    setMessages(prev => [...prev, { role, text, timestamp: Date.now() }]);
-  };
-
-  // ── TTS ────────────────────────────────────────────────────
-  const speakText = async (text: string, pauseMs = 0): Promise<void> => {
-    if (isMuted || !text) return;
-    if (pauseMs > 0) await new Promise(r => setTimeout(r, pauseMs));
-    setMode('speaking');
-    try {
-      await speakSentences(text);
-    } catch {
-      const clean = text.replace(/\*\*?(.*?)\*\*?/g, '$1').replace(/\n/g, ' ').trim();
-      await browserSpeak(clean);
-    } finally {
-      setMode('idle');
+  const playAudioB64Array = async (chunks: string | string[]): Promise<void> => {
+    const arr = Array.isArray(chunks) ? chunks : [chunks];
+    for (const b64 of arr) {
+      if (modeRef.current === 'listening' || modeRef.current === 'thinking') break;
+      await playAudioB64(b64);
     }
   };
 
+  // ── TTS fallback ─────────────────────────────────────────────
   const speakSentences = async (text: string): Promise<void> => {
     const res = await fetch(`${BACKEND}/speak-sentences`, {
       method: 'POST',
@@ -270,7 +293,37 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
       } catch { resolve(); }
     });
 
-  // ── Mic ────────────────────────────────────────────────────
+  const speakText = async (text: string, pauseMs = 0): Promise<void> => {
+    if (isMuted || !text) return;
+    if (pauseMs > 0) await new Promise(r => setTimeout(r, pauseMs));
+    setMode('speaking');
+    try {
+      await speakSentences(text);
+    } catch {
+      const clean = text.replace(/\*\*?(.*?)\*\*?/g, '$1').replace(/\n/g, ' ').trim();
+      await browserSpeak(clean);
+    } finally {
+      setMode('idle');
+    }
+  };
+
+  const speakResponse = async (text: string, audio_b64?: string | string[]): Promise<void> => {
+    if (isMuted) return;
+    setMode('speaking');
+    try {
+      if (audio_b64) {
+        await playAudioB64Array(audio_b64);
+      } else {
+        await speakSentences(text);
+      }
+    } catch {
+      await browserSpeak(text.replace(/\*\*?(.*?)\*\*?/g, '$1').replace(/\n/g, ' ').trim());
+    } finally {
+      setMode('idle');
+    }
+  };
+
+  // ── Mic ──────────────────────────────────────────────────────
   const requestMic = async (): Promise<MediaStream | null> => {
     try {
       return await navigator.mediaDevices.getUserMedia({
@@ -286,20 +339,6 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
       }
       return null;
     }
-  };
-
-  // ── Orb tap ────────────────────────────────────────────────
-  const handleOrbTap = async () => {
-    if (mode === 'thinking') return;
-    if (mode === 'speaking') {
-      stopAudio();
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
-      setMode('idle');
-      await startListening();
-      return;
-    }
-    if (mode === 'listening') { stopListening(); return; }
-    await startListening();
   };
 
   const startListening = async () => {
@@ -338,7 +377,20 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
     if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
   };
 
-  // ── Core pipeline: STT → LLM → TTS ────────────────────────
+  const handleOrbTap = async () => {
+    if (mode === 'thinking') return;
+    if (mode === 'speaking') {
+      stopAudio();
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      setMode('idle');
+      await startListening();
+      return;
+    }
+    if (mode === 'listening') { stopListening(); return; }
+    await startListening();
+  };
+
+  // ── STT pipeline ─────────────────────────────────────────────
   const handleAudioBlob = async (blob: Blob, isRetry = false) => {
     const formData = new FormData();
     const audioExt = blob.type.includes('mp4') ? 'audio.mp4'
@@ -370,113 +422,177 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
       return;
     }
 
-    appendMessage('user', transcript);
-    await sendToTherapySession(transcript);
+    appendMessage('user', transcript, currentPartRef.current);
+    await routeUserMessage(transcript);
   };
 
-  // ── Send message to /therapy-session ──────────────────────
-  const sendToTherapySession = async (text: string) => {
+  // ── Message router — directs to correct program endpoint ────
+  const routeUserMessage = async (text: string) => {
+    const part = currentPartRef.current;
+    const sid  = sessionIdRef.current;
+
+    if (!sid) {
+      setError('No active session. Please wait…');
+      setMode('idle');
+      return;
+    }
+
     try {
-      const res = await fetch(`${BACKEND}/therapy-session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id:         user.uid,
-          message:         text,
-          session_id:      sessionIdRef.current,
-          start_new:       !sessionIdRef.current,
-          response_length: 'long',
-        }),
-      });
-      if (!res.ok) throw new Error(`Therapy ${res.status}`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-
-      setSessionId(data.session_id);
-      setPhase(data.phase || 1);
-      setExtractedData(data.extracted || null);
-      if (data.session_complete) setSessionComplete(true);
-
-      const replyText = data.reply || '';
-      appendMessage('ai', replyText);
-
-      // ── Check if the AI wants to prescribe an exercise ─────
-      // The LLM adds "PRESCRIBE_EXERCISE" as a signal in phase 2–3
-      // OR you can call /exercise/prescribe explicitly after certain phases.
-      // We trigger on phase transition 2→3 (Planning phase entry).
-      const justEnteredPlanning = data.phase === 3 && phase !== 3;
-      if (justEnteredPlanning && !exerciseMode) {
-        // Speak the reply first, then offer exercise
-        if (data.audio_b64) {
-          setMode('speaking');
-          try { await playAudioB64Array(data.audio_b64); } finally { setMode('idle'); }
-        } else {
-          await speakText(replyText, data.pause_ms || 0);
-        }
-        // Small pause then prescribe
-        await new Promise(r => setTimeout(r, 800));
-        await prescribeExercise(data.session_id, data.extracted);
-        return;
-      }
-
-      // Normal audio playback
-      if (data.audio_b64) {
-        setMode('speaking');
-        try { await playAudioB64Array(data.audio_b64); } finally { setMode('idle'); }
+      if (part === 2) {
+        await sendReviewTurn(text, sid);
+      } else if (part === 5) {
+        await sendCommitTurn(text, sid);
       } else {
-        await speakText(replyText, data.pause_ms || 0);
+        // Parts 1, 3, 4 don't have free-form voice turns (handled by UI)
+        setMode('idle');
       }
-    } catch (err: any) {
-      setError(`Something went wrong: ${err?.message || err}`);
+    } catch (e: any) {
+      setError(`Something went wrong: ${e?.message || e}`);
       setMode('idle');
     }
   };
 
-  // ── Play array of b64 chunks (from therapy-session) ───────
-  const playAudioB64Array = async (chunks: string | string[]): Promise<void> => {
-    const arr = Array.isArray(chunks) ? chunks : [chunks];
-    for (const b64 of arr) {
-      if (modeRef.current === 'listening' || modeRef.current === 'thinking') break;
-      await playAudioB64(b64);
-    }
+  // ── Text input submit ─────────────────────────────────────────
+  const handleTextSubmit = async () => {
+    const text = textDraft.trim();
+    if (!text || mode === 'thinking' || mode === 'speaking') return;
+    setTextDraft('');
+    setShowTextInput(false);
+    appendMessage('user', text, currentPartRef.current);
+    setMode('thinking');
+    await routeUserMessage(text);
   };
 
-  // ── Prescribe exercise ─────────────────────────────────────
-  const prescribeExercise = async (sid: string, extracted: any) => {
+  // ════════════════════════════════════════════════════════════
+  //  PROGRAM ENDPOINTS
+  // ════════════════════════════════════════════════════════════
+
+  // ── Part 1: Start session ─────────────────────────────────────
+  const startProgramSession = async () => {
+    setSessionLoading(true);
     try {
-      const res = await fetch(`${BACKEND}/exercise/prescribe`, {
+      const res  = await fetch(`${BACKEND}/program/start-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id:    user.uid,
-          session_id: sid,
-          anxiety:    extracted?.proposed_task?.anxiety_pre || 5,
-        }),
+        body: JSON.stringify({ user_id: user.uid }),
       });
-      const data: PrescribeResponse = await res.json();
-      if (!data.success) return;
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Failed to start session');
 
-      setExAnxietyPre(data.anxiety_pre || 5);
-      setExerciseData(data);
+      setSessionId(data.session_id);
+      setWeekInfo({
+        week:           data.week,
+        session_number: data.session_number,
+        title:          data.session_definition?.title,
+        theme:          data.week_definition?.theme,
+      });
+      setCurrentPart(1);
 
-      if (data.intro_speech) {
-        appendMessage('ai', data.intro_speech);
-        if (data.audio_b64 && !isMuted) {
-          setMode('speaking');
-          try { await playAudioB64(data.audio_b64); } finally { setMode('idle'); }
-        } else {
-          await speakText(data.intro_speech, 0);
-        }
+      if (data.opening_message) {
+        setOpeningMessage(data.opening_message);
+        const openingMsg = extractMessage(data.opening_message);
+        appendMessage('ai', openingMsg, 1);
+        await speakResponse(openingMsg, data.audio_b64);
       }
-
-      await new Promise(r => setTimeout(r, 400));
-      setExerciseMode(true);
-    } catch (e) {
-      console.error('[prescribeExercise]', e);
+    } catch (e: any) {
+      setError(`Could not start session: ${e?.message}`);
+    } finally {
+      setSessionLoading(false);
     }
   };
 
-  // ── Exercise complete callback ─────────────────────────────
+  // ── Part 1 → Part 2: Submit check-in score ────────────────────
+  const submitCheckin = async () => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    setMode('thinking');
+    setCheckinSubmitted(true);
+    try {
+      const res  = await fetch(`${BACKEND}/program/checkin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.uid, session_id: sid, score: checkinScore, note: checkinNote }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+
+      setCurrentPart(2);
+      if (data.review_message) {
+        const reviewMsg = extractMessage(data.review_message);
+        appendMessage('ai', reviewMsg, 2);
+        await speakResponse(reviewMsg, data.audio_b64);
+      }
+    } catch (e: any) {
+      setError(`Check-in failed: ${e?.message}`);
+      setCheckinSubmitted(false);
+    } finally {
+      setMode('idle');
+    }
+  };
+
+  // ── Part 2: Review conversation turn ─────────────────────────
+  const sendReviewTurn = async (text: string, sid: string) => {
+    const res  = await fetch(`${BACKEND}/program/review-turn`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: user.uid, session_id: sid, message: text }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+
+    const reply2 = extractMessage(data.reply);
+    appendMessage('ai', reply2, 2);
+    await speakResponse(reply2, data.audio_b64);
+
+    if (data.part_complete) {
+      // Transition to Part 3 — psychoeducation
+      setCurrentPart(3);
+      if (data.psychoeducation) {
+        setPsychoed(data.psychoeducation);
+      }
+    }
+  };
+
+  // ── Part 3 → Part 4: Mark psychoeducation complete ────────────
+  const completePsychoeducation = async () => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    setMode('thinking');
+    try {
+      const res  = await fetch(`${BACKEND}/program/psychoeducation-complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.uid, session_id: sid }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+
+      setCurrentPart(4);
+      setExAnxietyPre(checkinScore);
+      if (data.exercise && data.exercise_type) {
+        setExerciseData({
+          exercise_type:  data.exercise_type,
+          exercise:       data.exercise,
+          intro_message:  data.intro_message,
+          audio_b64:      data.audio_b64,
+        });
+
+        if (data.intro_message) {
+          appendMessage('ai', data.intro_message, 4);
+          await speakResponse(data.intro_message, data.audio_b64);
+        }
+
+        await new Promise(r => setTimeout(r, 400));
+        setExerciseMode(true);
+      }
+    } catch (e: any) {
+      setError(`Couldn't load exercise: ${e?.message}`);
+    } finally {
+      setMode('idle');
+    }
+  };
+
+  // ── Part 4: Exercise complete ─────────────────────────────────
   const handleExerciseComplete = async (results: any) => {
     setExerciseMode(false);
     setExerciseData(null);
@@ -486,36 +602,31 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
 
     setMode('thinking');
     try {
-      const res = await fetch(`${BACKEND}/exercise/complete`, {
+      const res  = await fetch(`${BACKEND}/program/exercise-complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id:          user.uid,
-          session_id:       sid,
-          exercise_type:    results.exercise_type,
-          anxiety_pre:      exAnxietyPre,
-          anxiety_post:     results.anxiety_post || exAnxietyPre,
-          responses:        results.responses || {},
-          notes:            results.notes || '',
-          duration_s:       results.duration_s || 0,
-          continue_session: true,
+          user_id:      user.uid,
+          session_id:   sid,
+          anxiety_pre:  exAnxietyPre,
+          anxiety_post: results.anxiety_post ?? exAnxietyPre,
+          responses:    results.responses || {},
+          notes:        results.notes     || '',
+          duration_s:   results.duration_s || 0,
         }),
       });
       const data = await res.json();
+      if (!data.success) throw new Error(data.error);
 
-      if (data.therapist_reply) {
-        appendMessage('ai', data.therapist_reply);
-        if (data.audio_b64 && !isMuted) {
-          setMode('speaking');
-          try { await playAudioB64Array(data.audio_b64); } finally { setMode('idle'); }
-        } else {
-          await speakText(data.therapist_reply, 0);
-        }
-      } else {
-        setMode('idle');
+      setCurrentPart(5);
+      if (data.debrief_message) {
+        const debriefMsg = extractMessage(data.debrief_message);
+        appendMessage('ai', debriefMsg, 5);
+        await speakResponse(debriefMsg, data.audio_b64);
       }
-    } catch (e) {
-      console.error('[exercise complete]', e);
+    } catch (e: any) {
+      setError(`Exercise submission failed: ${e?.message}`);
+    } finally {
       setMode('idle');
     }
   };
@@ -523,51 +634,62 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
   const handleExerciseSkip = () => {
     setExerciseMode(false);
     setExerciseData(null);
+    // Jump straight to commit (Part 5) without completing exercise
+    completePsychoeducation().catch(() => { setCurrentPart(5); });
   };
 
-  // ── Text submit ────────────────────────────────────────────
-  const handleTextSubmit = async () => {
-    const text = textDraft.trim();
-    if (!text || mode === 'thinking' || mode === 'speaking') return;
-    setTextDraft('');
-    setShowTextInput(false);
-    appendMessage('user', text);
-    setMode('thinking');
-    await sendToTherapySession(text);
+  // ── Part 5: Commit conversation turn ─────────────────────────
+  const sendCommitTurn = async (text: string, sid: string) => {
+    const res  = await fetch(`${BACKEND}/program/commit-turn`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: user.uid, session_id: sid, message: text }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+
+    const reply5 = extractMessage(data.reply);
+    appendMessage('ai', reply5, 5);
+    await speakResponse(reply5, data.audio_b64);
+
+    if (data.session_complete) {
+      setSessionComplete(true);
+      if (data.commitment) setCommitment(data.commitment);
+      if (data.program_complete) setProgramComplete(true);
+    }
   };
 
-  // ── Convert to plan ────────────────────────────────────────
-  const convertToPlan = async () => {
-    if (!sessionId) return;
-    setCreatingPlan(true);
-    try {
-      const res  = await fetch(`${BACKEND}/session-to-plan`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.uid, session_id: sessionId }),
-      });
-      const data = await res.json();
-      if (data.error) { showNotification?.('Could not create plan.'); return; }
-      setPlanCreated(true);
-      onPlanCreated?.(data.plan);
-      showNotification?.('🎯 Plan saved to your activities!');
-    } catch { showNotification?.('Error creating plan.'); }
-    finally { setCreatingPlan(false); }
-  };
-
+  // ── Reset / new session ───────────────────────────────────────
   const resetSession = () => {
     stopAudio();
     stopAnalyser();
     if (window.speechSynthesis) window.speechSynthesis.cancel();
     if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
     streamRef.current?.getTracks().forEach(t => t.stop());
-    setSessionId(null); setPhase(1); setSessionComplete(false);
-    setExtractedData(null); setMessages([]); setPlanCreated(false);
-    setError(''); setMode('idle'); setLastBlob(null); setShowTextInput(false);
-    setExerciseMode(false); setExerciseData(null);
-    setTimeout(() => triggerAIGreeting(), 600);
+
+    setSessionId(null);
+    setCurrentPart(1);
+    setSessionComplete(false);
+    setProgramComplete(false);
+    setCommitment('');
+    setWeekInfo(null);
+    setCheckinScore(5);
+    setCheckinNote('');
+    setCheckinSubmitted(false);
+    setOpeningMessage('');
+    setPsychoed(null);
+    setExerciseMode(false);
+    setExerciseData(null);
+    setMessages([]);
+    setError('');
+    setMode('idle');
+    setLastBlob(null);
+    setShowTextInput(false);
+
+    setTimeout(() => startProgramSession(), 600);
   };
 
-  // ── Orb config ─────────────────────────────────────────────
+  // ── Orb config ────────────────────────────────────────────────
   const orbConfig: Record<Mode, { bg: string; glow: string }> = {
     idle:      { bg: 'radial-gradient(circle at 38% 32%, #9f7aea, #5b21b6 60%, #3b0764)',  glow: '0 0 48px rgba(124,58,237,0.35), 0 0 96px rgba(91,33,182,0.15)' },
     listening: { bg: 'radial-gradient(circle at 38% 32%, #c084fc, #7c3aed 55%, #4c1d95)',  glow: '0 0 64px rgba(192,132,252,0.5), 0 0 128px rgba(124,58,237,0.25)' },
@@ -575,18 +697,19 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
     speaking:  { bg: 'radial-gradient(circle at 38% 32%, #6ee7b7, #10b981 55%, #065f46)',  glow: '0 0 64px rgba(16,185,129,0.45), 0 0 120px rgba(16,185,129,0.15)' },
   };
   const orbLabel: Record<Mode, string> = {
-    idle:      sessionId ? 'Tap to reply' : 'Tap to begin',
+    idle:      sessionId ? 'Tap to speak' : 'Starting…',
     listening: 'Tap to send',
     thinking:  'Thinking…',
     speaking:  'Tap to interrupt',
   };
   const orbScale = mode === 'listening' ? orbLevel : 1;
 
-  // ══════════════════════════════════════════════════════════
-  // RENDER
-  // ══════════════════════════════════════════════════════════
+  // Voice-turn UI is only shown in Parts 2 and 5
+  const isVoicePart = currentPart === 2 || currentPart === 5;
 
-  // Show exercise UI fullscreen over the session
+  // ══════════════════════════════════════════════════════════
+  // RENDER — Exercise screen overrides everything
+  // ══════════════════════════════════════════════════════════
   if (exerciseMode && exerciseData) {
     return (
       <ExerciseScreen
@@ -603,39 +726,60 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       gap: '0', padding: '12px 0 24px', height: '100%', minHeight: 0,
     }}>
-      {/* Phase strip */}
-      {sessionId && !sessionComplete && (
-        <div style={{
-          display: 'flex', alignItems: 'center',
-          background: T.surface, border: `1px solid ${T.border}`,
-          borderRadius: '100px', padding: '4px', marginBottom: '16px', flexShrink: 0,
-        }}>
-          {[1,2,3,4].map(p => (
-            <div key={p} style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '5px 12px', borderRadius: '100px',
-              background: p === phase ? T.accentSoft : 'transparent',
-              border: p === phase ? `1px solid ${T.borderHov}` : '1px solid transparent',
-              transition: 'all 0.3s ease',
-            }}>
-              <div style={{
-                width: '6px', height: '6px', borderRadius: '50%',
-                background: p < phase ? T.green : p === phase ? '#a78bfa' : T.textMuted,
-              }} />
-              {p === phase && (
-                <span style={{ fontSize: '11px', fontWeight: '700', color: T.textPrimary, letterSpacing: '0.02em' }}>
-                  {PHASE_LABELS[p]}
-                </span>
+
+      {/* ── Week / part strip ────────────────────────────────── */}
+      {sessionId && !sessionComplete && weekInfo && (
+        <div style={{ width: '100%', marginBottom: '14px', flexShrink: 0 }}>
+          {/* Week badge */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{
+                padding: '3px 10px', borderRadius: '100px',
+                background: T.accentSoft, border: `1px solid ${T.borderHov}`,
+                color: '#a78bfa', fontSize: '11px', fontWeight: '700', letterSpacing: '0.04em',
+              }}>
+                Week {weekInfo.week} · Session {weekInfo.session_number}
+              </span>
+              {weekInfo.theme && (
+                <span style={{ color: T.textMuted, fontSize: '11px' }}>{weekInfo.theme}</span>
               )}
             </div>
-          ))}
+          </div>
+
+          {/* 5-part progress bar */}
+          <div style={{ display: 'flex', gap: '3px' }}>
+            {([1,2,3,4,5] as SessionPart[]).map(p => (
+              <div key={p} style={{
+                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+              }}>
+                <div style={{
+                  height: '3px', width: '100%', borderRadius: '2px',
+                  background: p < currentPart ? T.green : p === currentPart ? T.accent : T.border,
+                  transition: 'background 0.4s ease',
+                }} />
+                {p === currentPart && (
+                  <span style={{ color: '#a78bfa', fontSize: '9px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    {PART_LABELS[p]}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Conversation history */}
+      {/* ── Session loading ──────────────────────────────────── */}
+      {sessionLoading && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: T.textMuted, fontSize: '13px', marginBottom: '16px' }}>
+          <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
+          Starting your session…
+        </div>
+      )}
+
+      {/* ── Conversation history ─────────────────────────────── */}
       {messages.length > 0 && !sessionComplete && (
         <div style={{
-          width: '100%', maxHeight: '260px', overflowY: 'auto',
+          width: '100%', maxHeight: '240px', overflowY: 'auto',
           display: 'flex', flexDirection: 'column', gap: '8px',
           paddingBottom: '8px', marginBottom: '4px', scrollbarWidth: 'none',
         }}>
@@ -654,7 +798,7 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
             }}>
               {msg.role === 'ai' && (
                 <p style={{ color: T.textMuted, fontSize: '10px', fontWeight: '700', margin: '0 0 5px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                  Therapist
+                  Therapist · {msg.part ? PART_LABELS[msg.part] : ''}
                 </p>
               )}
               {msg.text}
@@ -664,74 +808,46 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
         </div>
       )}
 
-      {/* ORB */}
-      {!sessionComplete && (
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '240px', height: '240px', flexShrink: 0 }}>
-          <div style={{
-            position: 'absolute', inset: '-20px', borderRadius: '50%',
-            background: mode === 'listening' ? 'radial-gradient(circle, rgba(192,132,252,0.14) 0%, transparent 70%)'
-              : mode === 'speaking' ? 'radial-gradient(circle, rgba(16,185,129,0.1) 0%, transparent 70%)'
-              : mode === 'thinking' ? 'radial-gradient(circle, rgba(245,158,11,0.08) 0%, transparent 70%)'
-              : 'radial-gradient(circle, rgba(124,58,237,0.08) 0%, transparent 70%)',
-            transition: 'background 0.5s ease', pointerEvents: 'none',
-          }} />
-          {mode === 'listening' && [1,2,3].map((_,i) => (
-            <div key={i} style={{
-              position: 'absolute',
-              width: `${(160 + i * 28) * orbScale}px`, height: `${(160 + i * 28) * orbScale}px`,
-              borderRadius: '50%', border: `1px solid rgba(167,139,250,${0.22 - i * 0.06})`,
-              transition: 'all 0.04s ease', pointerEvents: 'none',
-            }} />
-          ))}
-          {mode === 'speaking' && [1,2].map((_,i) => (
-            <div key={i} style={{
-              position: 'absolute', width: `${170 + i * 32}px`, height: `${170 + i * 32}px`,
-              borderRadius: '50%', border: `1px solid rgba(16,185,129,${0.2 - i * 0.07})`,
-              animation: `speakRing ${1.2 + i * 0.4}s ease-in-out infinite`,
-              animationDelay: `${i * 0.2}s`, pointerEvents: 'none',
-            }} />
-          ))}
-          {mode === 'thinking' && (
-            <div style={{
-              position: 'absolute', width: '180px', height: '180px', borderRadius: '50%',
-              border: '1.5px solid transparent', borderTopColor: T.amber,
-              animation: 'spin 1s linear infinite', pointerEvents: 'none',
-            }} />
-          )}
-          <button
-            onClick={handleOrbTap}
-            disabled={mode === 'thinking'}
-            style={{
-              width: '156px', height: '156px', borderRadius: '50%',
-              border: `1.5px solid rgba(255,255,255,${mode === 'idle' ? 0.08 : 0.12})`,
-              cursor: mode === 'thinking' ? 'default' : 'pointer',
-              background: orbConfig[mode].bg, boxShadow: orbConfig[mode].glow,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
-              transform: `scale(${orbScale})`,
-              transition: 'background 0.5s ease, box-shadow 0.5s ease, border-color 0.3s ease',
-              WebkitTapHighlightColor: 'transparent', userSelect: 'none',
-              position: 'relative', overflow: 'hidden',
-            }}
-          >
-            <div style={{
-              position: 'absolute', top: '12%', left: '20%', width: '35%', height: '28%',
-              borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(255,255,255,0.18) 0%, transparent 100%)',
-              pointerEvents: 'none',
-            }} />
-            {mode === 'thinking' ? (
-              <Loader2 style={{ width: 38, height: 38, color: 'rgba(255,255,255,0.9)', animation: 'spin 0.85s linear infinite', position: 'relative', zIndex: 1 }} />
-            ) : mode === 'listening' ? (
-              <MicOff style={{ width: 38, height: 38, color: 'rgba(255,255,255,0.9)', position: 'relative', zIndex: 1 }} />
-            ) : mode === 'speaking' ? (
-              <Volume2 style={{ width: 38, height: 38, color: 'rgba(255,255,255,0.9)', position: 'relative', zIndex: 1 }} />
-            ) : (
-              <Mic style={{ width: 38, height: 38, color: 'rgba(255,255,255,0.88)', position: 'relative', zIndex: 1 }} />
-            )}
-            <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: '10px', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', position: 'relative', zIndex: 1 }}>
-              {orbLabel[mode]}
-            </span>
-          </button>
-        </div>
+      {/* ═══════════════════════════════════════════════════════
+          PART 1 — CHECK-IN UI (shown below opening message)
+          ═══════════════════════════════════════════════════════ */}
+      {currentPart === 1 && sessionId && !checkinSubmitted && !sessionComplete && (
+        <CheckinPanel
+          score={checkinScore}
+          note={checkinNote}
+          onScoreChange={setCheckinScore}
+          onNoteChange={setCheckinNote}
+          onSubmit={submitCheckin}
+          isLoading={mode === 'thinking'}
+        />
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          PART 2 — REVIEW: voice/text conversation orb
+          PART 5 — COMMIT: same orb
+          (Parts 3 and 4 have their own full UI cards below)
+          ═══════════════════════════════════════════════════════ */}
+       
+{isVoicePart && !sessionComplete && (
+  <>
+    <AvatarCanvas
+      mode={mode}
+      orbLevel={orbLevel}
+      onTap={handleOrbTap}
+      size={240}
+    />
+  </>
+)}
+
+      {/* ═══════════════════════════════════════════════════════
+          PART 3 — PSYCHOEDUCATION CARD
+          ═══════════════════════════════════════════════════════ */}
+      {currentPart === 3 && psychoed && !sessionComplete && (
+        <PsychoeducationCard
+          content={psychoed}
+          onContinue={completePsychoeducation}
+          isLoading={mode === 'thinking'}
+        />
       )}
 
       {/* Error + retry */}
@@ -740,7 +856,7 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
           display: 'flex', alignItems: 'center', gap: '8px',
           padding: '10px 16px', borderRadius: '10px',
           background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)',
-          flexShrink: 0, flexWrap: 'wrap',
+          flexShrink: 0, flexWrap: 'wrap', width: '100%',
         }}>
           <span style={{ fontSize: '13px', color: T.red, flex: 1 }}>⚠ {error}</span>
           {lastBlob && (
@@ -756,9 +872,9 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
         </div>
       )}
 
-      {/* Controls */}
-      {!sessionComplete && (
-        <div style={{ width: '100%', flexShrink: 0 }}>
+      {/* ── Controls (voice parts only) ─────────────────────── */}
+      {isVoicePart && !sessionComplete && (
+        <div style={{ width: '100%', flexShrink: 0, marginTop: '8px' }}>
           {showTextInput ? (
             <div style={{
               display: 'flex', gap: '8px', alignItems: 'center',
@@ -830,7 +946,9 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
         </div>
       )}
 
-      {/* Session complete */}
+      {/* ═══════════════════════════════════════════════════════
+          SESSION COMPLETE
+          ═══════════════════════════════════════════════════════ */}
       {sessionComplete && (
         <div style={{
           width: '100%', background: T.elevated, border: `1px solid ${T.border}`,
@@ -840,7 +958,8 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
             position: 'absolute', top: 0, left: '10%', right: '10%', height: '1px',
             background: 'linear-gradient(90deg, transparent, rgba(16,185,129,0.5), transparent)',
           }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
             <div style={{
               width: '40px', height: '40px', borderRadius: '12px',
               background: T.greenSoft, border: '1px solid rgba(16,185,129,0.25)',
@@ -848,47 +967,42 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
               fontSize: '18px', flexShrink: 0,
             }}>✓</div>
             <div>
-              <p style={{ color: T.green, fontWeight: '700', fontSize: '16px', margin: 0 }}>Session complete</p>
-              <p style={{ color: T.textMuted, fontSize: '12px', margin: '3px 0 0' }}>Here's what you worked through today</p>
+              <p style={{ color: T.green, fontWeight: '700', fontSize: '16px', margin: 0 }}>
+                {programComplete ? '🎉 Program complete!' : 'Session complete'}
+              </p>
+              <p style={{ color: T.textMuted, fontSize: '12px', margin: '3px 0 0' }}>
+                {weekInfo ? `Week ${weekInfo.week} · Session ${weekInfo.session_number}` : ''}{weekInfo?.title ? ` — ${weekInfo.title}` : ''}
+              </p>
             </div>
           </div>
-          {extractedData?.situation && <SummaryCard label="What was going on" value={extractedData.situation} color={T.teal} colorSoft={T.tealSoft} icon="🌀" />}
-          {extractedData?.anxious_thought && <SummaryCard label="The thought that was weighing on you" value={extractedData.anxious_thought} color={T.red} colorSoft="rgba(248,113,113,0.08)" icon="💭" />}
-          {extractedData?.reframe && <SummaryCard label="A different way to see it" value={extractedData.reframe} color={T.amber} colorSoft="rgba(245,158,11,0.08)" icon="✨" italic />}
-          {extractedData?.proposed_task?.name && (
+
+          {commitment && (
             <div style={{
               padding: '16px 18px', borderRadius: '14px',
               background: T.accentSoft, border: `1px solid ${T.borderHov}`, marginBottom: '20px',
             }}>
               <p style={{ color: T.textMuted, fontSize: '10px', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: '700' }}>🎯 Your commitment</p>
-              <p style={{ color: T.textPrimary, fontWeight: '700', fontSize: '17px', margin: 0, lineHeight: 1.35 }}>{extractedData.proposed_task.name}</p>
-              {extractedData.proposed_task.why && <p style={{ color: T.textSecondary, fontSize: '13px', margin: '6px 0 0', lineHeight: 1.5 }}>{extractedData.proposed_task.why}</p>}
+              <p style={{ color: T.textPrimary, fontWeight: '600', fontSize: '15px', margin: 0, lineHeight: 1.5 }}>{commitment}</p>
             </div>
           )}
-          {planCreated ? (
-            <div style={{ padding: '14px', borderRadius: '12px', textAlign: 'center', background: T.greenSoft, border: '1px solid rgba(16,185,129,0.2)', marginBottom: '10px' }}>
-              <p style={{ color: T.green, fontWeight: '700', fontSize: '14px', margin: 0 }}>🎯 Saved to your activities</p>
-            </div>
-          ) : (
-            <button onClick={convertToPlan} disabled={creatingPlan} style={{
+
+          {!programComplete && (
+            <button onClick={resetSession} style={{
               width: '100%', padding: '15px', marginBottom: '10px',
-              background: creatingPlan ? T.tealSoft : 'linear-gradient(135deg, #0ea5e9, #0891b2)',
+              background: 'linear-gradient(135deg, #7c3aed, #5b21b6)',
               border: 'none', borderRadius: '14px', color: '#fff', fontWeight: '700', fontSize: '15px',
-              cursor: creatingPlan ? 'not-allowed' : 'pointer',
+              cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-              boxShadow: creatingPlan ? 'none' : '0 4px 24px rgba(14,165,233,0.3)',
-              transition: 'all 0.2s ease',
+              boxShadow: '0 4px 24px rgba(124,58,237,0.3)',
             }}>
-              {creatingPlan
-                ? <><Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} /> Saving plan…</>
-                : <><CheckCircle style={{ width: 16, height: 16 }} /> Save as my plan</>}
+              <ArrowRight style={{ width: 16, height: 16 }} /> Next session
             </button>
           )}
           <button onClick={resetSession} style={{
             width: '100%', padding: '11px', background: 'none',
             border: `1px solid ${T.border}`, borderRadius: '12px',
             color: T.textMuted, fontSize: '13px', cursor: 'pointer',
-          }}>Start new session</button>
+          }}>Start over</button>
         </div>
       )}
 
@@ -904,70 +1018,303 @@ export default function VoiceTherapySession({ user, onPlanCreated, showNotificat
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// EXERCISE SCREEN — routes to correct exercise renderer
+// PART 1 — CHECK-IN PANEL
 // ══════════════════════════════════════════════════════════════════════════
 
-function ExerciseScreen({ data, anxietyPre, onComplete, onSkip }: {
-  data: PrescribeResponse;
+function CheckinPanel({
+  score, note, onScoreChange, onNoteChange, onSubmit, isLoading,
+}: {
+  score: number; note: string;
+  onScoreChange: (v: number) => void;
+  onNoteChange: (v: string) => void;
+  onSubmit: () => void;
+  isLoading: boolean;
+}) {
+  const color = score <= 3 ? T.green : score <= 6 ? T.amber : T.red;
+  return (
+    <div style={{
+      width: '100%', background: T.elevated, border: `1px solid ${T.border}`,
+      borderRadius: '20px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '18px',
+    }}>
+      <p style={{ color: T.textSecondary, fontSize: '14px', margin: 0, lineHeight: 1.5 }}>
+        How anxious are you feeling right now?
+      </p>
+
+      <div style={{ textAlign: 'center' }}>
+        <p style={{ color, fontSize: '44px', fontWeight: '700', margin: '0 0 4px' }}>{score}</p>
+        <p style={{ color: T.textMuted, fontSize: '12px', margin: 0 }}>out of 10</p>
+      </div>
+
+      <input
+        type="range" min={0} max={10} step={1} value={score}
+        onChange={e => onScoreChange(Number(e.target.value))}
+        style={{ width: '100%', accentColor: color }}
+      />
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <span style={{ color: T.green, fontSize: '11px' }}>Calm</span>
+        <span style={{ color: T.red, fontSize: '11px' }}>Very anxious</span>
+      </div>
+
+      <input
+        value={note}
+        onChange={e => onNoteChange(e.target.value)}
+        placeholder="What's on your mind coming in? (optional)"
+        style={{
+          padding: '12px 14px', borderRadius: '12px',
+          background: T.surface, border: `1px solid ${T.border}`,
+          color: T.textPrimary, fontSize: '14px', outline: 'none', fontFamily: 'inherit',
+        }}
+      />
+
+      <button
+        onClick={onSubmit}
+        disabled={isLoading}
+        style={{
+          padding: '14px', borderRadius: '14px', border: 'none',
+          background: isLoading ? T.accentSoft : T.accent,
+          color: '#fff', fontSize: '15px', fontWeight: '700', cursor: isLoading ? 'not-allowed' : 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+        }}
+      >
+        {isLoading
+          ? <><Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} /> Submitting…</>
+          : <>Continue <ChevronRight style={{ width: 16, height: 16 }} /></>}
+      </button>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// PART 3 — PSYCHOEDUCATION CARD
+// ══════════════════════════════════════════════════════════════════════════
+
+function PsychoeducationCard({
+  content, onContinue, isLoading,
+}: {
+  content: { title: string; body: string; key_insight: string };
+  onContinue: () => void;
+  isLoading: boolean;
+}) {
+  return (
+    <div style={{
+      width: '100%', background: T.elevated, border: `1px solid ${T.border}`,
+      borderRadius: '20px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px',
+      position: 'relative', overflow: 'hidden',
+    }}>
+      {/* Decorative top bar */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: '3px',
+        background: 'linear-gradient(90deg, #7c3aed, #0ea5e9)',
+      }} />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{
+          width: '34px', height: '34px', borderRadius: '10px',
+          background: T.tealSoft, border: `1px solid rgba(14,165,233,0.25)`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <BookOpen style={{ width: 16, height: 16, color: T.teal }} />
+        </div>
+        <div>
+          <p style={{ color: T.textMuted, fontSize: '10px', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: '700' }}>
+            This session's concept
+          </p>
+          <p style={{ color: T.textPrimary, fontWeight: '700', fontSize: '15px', margin: 0 }}>{content.title}</p>
+        </div>
+      </div>
+
+      <p style={{ color: T.textSecondary, fontSize: '14px', lineHeight: 1.7, margin: 0 }}>{content.body}</p>
+
+      {/* Key insight */}
+      <div style={{
+        padding: '14px 16px', borderRadius: '14px',
+        background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(14,165,233,0.08))',
+        border: `1px solid ${T.borderHov}`,
+      }}>
+        <p style={{ color: T.textMuted, fontSize: '10px', margin: '0 0 5px', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: '700' }}>💡 Key insight</p>
+        <p style={{ color: '#c4b5fd', fontSize: '14px', fontWeight: '600', fontStyle: 'italic', margin: 0, lineHeight: 1.5 }}>
+          "{content.key_insight}"
+        </p>
+      </div>
+
+      <button
+        onClick={onContinue}
+        disabled={isLoading}
+        style={{
+          padding: '14px', borderRadius: '14px', border: 'none',
+          background: isLoading ? T.accentSoft : 'linear-gradient(135deg, #7c3aed, #0ea5e9)',
+          color: '#fff', fontSize: '15px', fontWeight: '700', cursor: isLoading ? 'not-allowed' : 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+          boxShadow: isLoading ? 'none' : '0 4px 20px rgba(124,58,237,0.3)',
+        }}
+      >
+        {isLoading
+          ? <><Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} /> Loading exercise…</>
+          : <><Dumbbell style={{ width: 16, height: 16 }} /> Start exercise</>}
+      </button>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// PART 4 — EXERCISE SCREEN (full-screen overlay)
+// ══════════════════════════════════════════════════════════════════════════
+
+function ExerciseScreen({
+  data, anxietyPre, onComplete, onSkip,
+}: {
+  data: { exercise_type: string; exercise: Exercise; intro_message?: string; audio_b64?: string };
   anxietyPre: number;
   onComplete: (r: any) => void;
   onSkip: () => void;
 }) {
-  const { exercise_type, exercise } = data;
-  const startTime = useRef(Date.now());
+  const ex   = data.exercise;
+  const type = data.exercise_type;
+  const cfg  = ex.config;
 
-  const finish = (results: any) => {
-    onComplete({
-      ...results,
-      exercise_type,
-      duration_s: Math.round((Date.now() - startTime.current) / 1000),
-    });
-  };
+  const [anxietyPost, setAnxietyPost] = useState(anxietyPre);
 
-  return (
+  const wrap = (child: React.ReactNode) => (
     <div style={{
-      width: '100%', display: 'flex', flexDirection: 'column',
-      padding: '8px 0 24px', gap: '0',
+      display: 'flex', flexDirection: 'column', gap: '0',
+      padding: '12px 0 24px', height: '100%', overflowY: 'auto',
     }}>
       {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: '20px', paddingBottom: '14px',
-        borderBottom: `1px solid ${T.border}`,
-      }}>
-        <div>
-          <p style={{ color: T.textMuted, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 3px', fontWeight: '700' }}>Exercise</p>
-          <p style={{ color: T.textPrimary, fontSize: '16px', fontWeight: '700', margin: 0 }}>{exercise.name}</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
+        <div style={{
+          width: '36px', height: '36px', borderRadius: '10px',
+          background: T.accentSoft, border: `1px solid ${T.borderHov}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <Dumbbell style={{ width: 16, height: 16, color: '#a78bfa' }} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ color: '#a78bfa', fontSize: '11px', margin: '0 0 2px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Exercise · Part 4</p>
+          <p style={{ color: T.textPrimary, fontWeight: '700', fontSize: '15px', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ex.name}</p>
         </div>
         <button onClick={onSkip} style={{
-          padding: '6px 14px', borderRadius: '20px', fontSize: '12px',
-          background: 'transparent', border: `1px solid ${T.border}`,
-          color: T.textMuted, cursor: 'pointer',
+          padding: '6px 12px', borderRadius: '100px', fontSize: '12px',
+          background: 'none', border: `1px solid ${T.border}`, color: T.textMuted, cursor: 'pointer', flexShrink: 0,
         }}>Skip</button>
       </div>
 
-      {/* Route to correct renderer */}
-      {(exercise_type === 'breathing_box' || exercise_type === 'breathing_4_7_8') && (
-        <BreathingExercise config={exercise.config} onComplete={finish} />
+      {cfg.message && (
+        <p style={{ color: T.textSecondary, fontSize: '13px', lineHeight: 1.6, margin: '0 0 18px', fontStyle: 'italic' }}>
+          "{cfg.message}"
+        </p>
       )}
-      {exercise_type === 'grounding_5_4_3_2_1' && (
-        <GroundingExercise config={exercise.config} onComplete={finish} />
-      )}
-      {exercise_type === 'thought_record' && (
-        <ThoughtRecordExercise config={exercise.config} onComplete={finish} />
-      )}
-      {exercise_type === 'body_scan' && (
-        <BodyScanExercise config={exercise.config} onComplete={finish} />
-      )}
-      {exercise_type === 'fear_ladder' && (
-        <FearLadderExercise config={exercise.config} onComplete={finish} />
-      )}
-      {exercise_type === 'values_compass' && (
-        <ValuesCompassExercise config={exercise.config} onComplete={finish} />
-      )}
-      {exercise_type === 'safe_place' && (
-        <SafePlaceExercise config={exercise.config} onComplete={finish} />
-      )}
+
+      {child}
+    </div>
+  );
+
+  if (type === 'box_breathing' || type === 'diaphragmatic_breathing' || type === 'physiological_sigh') {
+    return wrap(<BreathingExercise config={cfg} anxietyPre={anxietyPre} onComplete={onComplete} />);
+  }
+  if (type === 'grounding_54321') {
+    return wrap(<GroundingExercise config={cfg} anxietyPre={anxietyPre} onComplete={onComplete} />);
+  }
+  if (type === 'thought_record' || type === 'thought_catch' || type === 'evidence_court') {
+    return wrap(<ThoughtRecordExercise config={cfg} anxietyPre={anxietyPre} onComplete={onComplete} />);
+  }
+  if (type === 'body_scan') {
+    return wrap(<BodyScanExercise config={cfg} anxietyPre={anxietyPre} onComplete={onComplete} />);
+  }
+  if (type === 'values_compass') {
+    return wrap(<ValuesCompassExercise config={cfg} anxietyPre={anxietyPre} onComplete={onComplete} />);
+  }
+  if (type === 'safe_place') {
+    return wrap(<SafePlaceExercise config={cfg} anxietyPre={anxietyPre} onComplete={onComplete} />);
+  }
+
+  // Generic fallback for all other exercise types (anxiety_mapping, trigger_swipe, fear_ladder, etc.)
+  return wrap(
+    <GenericExercise exercise={ex} anxietyPre={anxietyPre} exerciseType={type} onComplete={onComplete} />
+  );
+}
+
+// ── Generic exercise fallback ─────────────────────────────────────────────
+
+function GenericExercise({ exercise, anxietyPre, exerciseType, onComplete }: {
+  exercise: Exercise; anxietyPre: number; exerciseType: string; onComplete: (r: any) => void;
+}) {
+  const [responses, setResponses] = useState<Record<string, any>>({});
+  const [notes, setNotes]         = useState('');
+  const [anxietyPost, setAnxietyPost] = useState(anxietyPre);
+  const cfg = exercise.config;
+
+  const update = (id: string, val: any) => setResponses(r => ({ ...r, [id]: val }));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {/* Render any fields if the catalog defines them */}
+      {cfg.fields?.map(f => (
+        <div key={f.id}>
+          <p style={{ color: T.textSecondary, fontSize: '13px', margin: '0 0 8px' }}>{f.label}</p>
+          {f.type === 'textarea' ? (
+            <textarea
+              rows={f.rows || 2}
+              value={responses[f.id] || ''}
+              onChange={e => update(f.id, e.target.value)}
+              placeholder={f.placeholder}
+              style={{
+                width: '100%', padding: '12px', borderRadius: '12px', resize: 'none',
+                background: T.surface, border: `1px solid ${T.border}`,
+                color: T.textPrimary, fontSize: '14px', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
+              }}
+            />
+          ) : f.type === 'slider' ? (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ color: T.textMuted, fontSize: '12px' }}>{f.min ?? 0}</span>
+                <span style={{ color: T.textPrimary, fontSize: '14px', fontWeight: '700' }}>{responses[f.id] ?? f.min ?? 0}{f.unit}</span>
+                <span style={{ color: T.textMuted, fontSize: '12px' }}>{f.max ?? 10}</span>
+              </div>
+              <input
+                type="range" min={f.min ?? 0} max={f.max ?? 10} step={f.step ?? 1}
+                value={responses[f.id] ?? f.min ?? 0}
+                onChange={e => update(f.id, Number(e.target.value))}
+                style={{ width: '100%', accentColor: T.accent }}
+              />
+            </div>
+          ) : (
+            <input
+              value={responses[f.id] || ''}
+              onChange={e => update(f.id, e.target.value)}
+              placeholder={f.placeholder}
+              style={{
+                width: '100%', padding: '12px', borderRadius: '12px',
+                background: T.surface, border: `1px solid ${T.border}`,
+                color: T.textPrimary, fontSize: '14px', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
+              }}
+            />
+          )}
+        </div>
+      ))}
+
+      <textarea
+        value={notes}
+        onChange={e => setNotes(e.target.value)}
+        placeholder="Any notes or reflections…"
+        rows={2}
+        style={{
+          width: '100%', padding: '12px', borderRadius: '12px', resize: 'none',
+          background: T.surface, border: `1px solid ${T.border}`,
+          color: T.textPrimary, fontSize: '14px', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
+        }}
+      />
+
+      <AnxietyPostSlider label="How do you feel now?" initial={anxietyPre} onChange={setAnxietyPost} showSubmit={false} onSubmit={() => {}} />
+
+      <button
+        onClick={() => onComplete({ exercise_type: exerciseType, responses, notes, anxiety_post: anxietyPost })}
+        style={{
+          padding: '14px', borderRadius: '14px', border: 'none',
+          background: T.accent, color: '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+        }}
+      >
+        Complete exercise <ChevronRight style={{ width: 16, height: 16, display: 'inline-block', verticalAlign: 'middle' }} />
+      </button>
     </div>
   );
 }
@@ -976,90 +1323,97 @@ function ExerciseScreen({ data, anxietyPre, onComplete, onSkip }: {
 // BREATHING EXERCISE
 // ══════════════════════════════════════════════════════════════════════════
 
-function BreathingExercise({ config, onComplete }: { config: ExerciseConfig; onComplete: (r: any) => void }) {
-  const phases   = config.phases || [];
-  const cycles   = config.cycles || 4;
-  const [phaseIdx, setPhaseIdx]       = useState(0);
-  const [cycleCount, setCycleCount]   = useState(0);
-  const [timeLeft, setTimeLeft]       = useState(phases[0]?.duration || 4);
-  const [running, setRunning]         = useState(false);
-  const [done, setDone]               = useState(false);
-  const [anxietyPost, setAnxietyPost] = useState(5);
+function BreathingExercise({ config, anxietyPre, onComplete }: { config: ExerciseConfig; anxietyPre: number; onComplete: (r: any) => void }) {
+  const phases   = config.phases || [
+    { label: 'Inhale',  duration: 4, color: T.teal },
+    { label: 'Hold',    duration: 4, color: T.amber },
+    { label: 'Exhale',  duration: 4, color: T.accent },
+    { label: 'Hold',    duration: 4, color: T.textMuted },
+  ];
+  const totalCycles = config.cycles || 4;
+
+  const [phaseIdx, setPhaseIdx]   = useState(0);
+  const [countdown, setCountdown] = useState(phases[0].duration);
+  const [cycle, setCycle]         = useState(0);
+  const [running, setRunning]     = useState(false);
+  const [done, setDone]           = useState(false);
+  const [anxietyPost, setAnxietyPost] = useState(anxietyPre);
 
   useEffect(() => {
     if (!running || done) return;
-    if (timeLeft <= 0) {
-      const nextIdx = (phaseIdx + 1) % phases.length;
-      const nextCycle = nextIdx === 0 ? cycleCount + 1 : cycleCount;
-      if (nextCycle >= cycles && nextIdx === 0) {
-        setDone(true); setRunning(false); return;
-      }
-      setCycleCount(nextCycle);
-      setPhaseIdx(nextIdx);
-      setTimeLeft(phases[nextIdx].duration);
-      return;
-    }
-    const t = setTimeout(() => setTimeLeft(s => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [running, timeLeft, phaseIdx, cycleCount]);
+    const id = setInterval(() => {
+      setCountdown(c => {
+        if (c > 1) return c - 1;
+        // Move to next phase
+        setPhaseIdx(p => {
+          const next = (p + 1) % phases.length;
+          if (next === 0) {
+            setCycle(cy => {
+              const newCy = cy + 1;
+              if (newCy >= totalCycles) { setDone(true); setRunning(false); }
+              return newCy;
+            });
+          }
+          setCountdown(phases[next].duration);
+          return next;
+        });
+        return phases[0].duration; // will be overwritten above
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [running, done, phases, totalCycles]);
 
-  const currentPhase = phases[phaseIdx] || phases[0];
-  const progress     = currentPhase ? (1 - timeLeft / currentPhase.duration) : 0;
-  const orbSize      = currentPhase?.label === 'Inhale' ? 120 + progress * 40
-                     : currentPhase?.label === 'Exhale' ? 160 - progress * 40
-                     : 140;
+  const currentPhase = phases[phaseIdx];
+  const progress = 1 - (countdown / currentPhase.duration);
 
   if (done) {
     return (
-      <AnxietyPostSlider
-        label="How does your body feel now?"
-        initial={anxietyPost}
-        onChange={setAnxietyPost}
-        onSubmit={() => onComplete({ anxiety_post: anxietyPost, responses: {} })}
-      />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <p style={{ color: T.green, fontWeight: '700', fontSize: '16px', textAlign: 'center', margin: 0 }}>
+          ✓ Breathing complete
+        </p>
+        <AnxietyPostSlider label="How do you feel now?" initial={anxietyPre} onChange={setAnxietyPost} showSubmit={false} onSubmit={() => {}} />
+        <button onClick={() => onComplete({ anxiety_post: anxietyPost, responses: { cycles_completed: cycle } })} style={{
+          padding: '14px', borderRadius: '14px', border: 'none',
+          background: T.accent, color: '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+        }}>Done</button>
+      </div>
     );
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
-      <p style={{ color: T.textSecondary, fontSize: '13px', textAlign: 'center', margin: 0, lineHeight: 1.6 }}>
-        {config.message}
-      </p>
-
-      {/* Animated breathing orb */}
-      <div style={{ position: 'relative', width: '200px', height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {/* Animated circle */}
+      <div style={{ position: 'relative', width: '160px', height: '160px' }}>
+        <svg width="160" height="160" style={{ position: 'absolute', top: 0, left: 0, transform: 'rotate(-90deg)' }}>
+          <circle cx="80" cy="80" r="70" fill="none" stroke={T.border} strokeWidth="4" />
+          <circle
+            cx="80" cy="80" r="70" fill="none"
+            stroke={currentPhase.color} strokeWidth="4"
+            strokeDasharray={`${2 * Math.PI * 70}`}
+            strokeDashoffset={`${2 * Math.PI * 70 * (1 - progress)}`}
+            style={{ transition: 'stroke-dashoffset 0.9s linear, stroke 0.3s' }}
+          />
+        </svg>
         <div style={{
-          width: `${orbSize}px`, height: `${orbSize}px`, borderRadius: '50%',
-          background: currentPhase?.color || T.accent,
-          opacity: 0.85,
-          transition: 'width 1s ease, height 1s ease',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: `0 0 ${orbSize * 0.4}px ${currentPhase?.color || T.accent}44`,
+          position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
         }}>
-          <div style={{ textAlign: 'center' }}>
-            <p style={{ color: '#fff', fontSize: '28px', fontWeight: '700', margin: 0 }}>{timeLeft}</p>
-            <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '13px', fontWeight: '600', margin: 0, letterSpacing: '0.05em' }}>{currentPhase?.label}</p>
-          </div>
+          <p style={{ color: currentPhase.color, fontSize: '28px', fontWeight: '700', margin: 0 }}>{countdown}</p>
+          <p style={{ color: T.textSecondary, fontSize: '13px', fontWeight: '600', margin: 0 }}>{currentPhase.label}</p>
         </div>
       </div>
 
-      <p style={{ color: T.textMuted, fontSize: '12px', margin: 0 }}>
-        Cycle {cycleCount + 1} of {cycles}
-      </p>
+      <p style={{ color: T.textMuted, fontSize: '12px', margin: 0 }}>Cycle {cycle + 1} of {totalCycles}</p>
 
-      {!running ? (
-        <button onClick={() => setRunning(true)} style={{
-          padding: '14px 40px', borderRadius: '100px', border: 'none',
-          background: T.accent, color: '#fff', fontSize: '15px', fontWeight: '700',
-          cursor: 'pointer', letterSpacing: '0.04em',
-        }}>Begin</button>
-      ) : (
-        <button onClick={() => setRunning(false)} style={{
-          padding: '10px 28px', borderRadius: '100px',
-          border: `1px solid ${T.border}`, background: 'transparent',
-          color: T.textMuted, fontSize: '13px', cursor: 'pointer',
-        }}>Pause</button>
-      )}
+      <button onClick={() => setRunning(r => !r)} style={{
+        padding: '14px 32px', borderRadius: '14px', border: 'none',
+        background: running ? T.accentSoft : T.accent,
+        color: running ? '#a78bfa' : '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+        border_: `1px solid ${T.borderHov}`,
+      }}>
+        {running ? 'Pause' : 'Start'}
+      </button>
     </div>
   );
 }
@@ -1068,106 +1422,74 @@ function BreathingExercise({ config, onComplete }: { config: ExerciseConfig; onC
 // GROUNDING 5-4-3-2-1
 // ══════════════════════════════════════════════════════════════════════════
 
-function GroundingExercise({ config, onComplete }: { config: ExerciseConfig; onComplete: (r: any) => void }) {
-  const steps     = config.steps || [];
-  const [stepIdx, setStepIdx]       = useState(0);
-  const [inputs, setInputs]         = useState<Record<string, string[]>>({});
-  const [current, setCurrent]       = useState('');
-  const [items, setItems]           = useState<string[]>([]);
-  const [anxietyPost, setAnxietyPost] = useState(5);
-  const [done, setDone]             = useState(false);
+function GroundingExercise({ config, anxietyPre, onComplete }: { config: ExerciseConfig; anxietyPre: number; onComplete: (r: any) => void }) {
+  const steps = config.steps || [];
+  const [stepIdx, setStepIdx]         = useState(0);
+  const [responses, setResponses]     = useState<string[]>(steps.map(() => ''));
+  const [anxietyPost, setAnxietyPost] = useState(anxietyPre);
+  const [done, setDone]               = useState(false);
 
-  const step = steps[stepIdx];
-
-  const addItem = () => {
-    if (!current.trim()) return;
-    const next = [...items, current.trim()];
-    setItems(next);
-    setCurrent('');
-    if (next.length >= step.count) {
-      const newInputs = { ...inputs, [step.sense]: next };
-      setInputs(newInputs);
-      if (stepIdx < steps.length - 1) {
-        setStepIdx(s => s + 1);
-        setItems([]);
-      } else {
-        setDone(true);
-      }
-    }
-  };
+  const current = steps[stepIdx];
 
   if (done) {
     return (
-      <AnxietyPostSlider
-        label="How grounded do you feel now?"
-        initial={anxietyPost}
-        onChange={setAnxietyPost}
-        onSubmit={() => onComplete({ anxiety_post: anxietyPost, responses: inputs })}
-      />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <AnxietyPostSlider label="How grounded do you feel?" initial={anxietyPre} onChange={setAnxietyPost} showSubmit={false} onSubmit={() => {}} />
+        <button onClick={() => onComplete({ anxiety_post: anxietyPost, responses: Object.fromEntries(steps.map((s, i) => [s.sense, responses[i]])) })} style={{
+          padding: '14px', borderRadius: '14px', border: 'none',
+          background: T.accent, color: '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+        }}>Done</button>
+      </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* Progress dots */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+      <div style={{
+        padding: '20px', borderRadius: '16px',
+        background: T.accentSoft, border: `1px solid ${T.borderHov}`, textAlign: 'center',
+      }}>
+        <p style={{ fontSize: '32px', margin: '0 0 8px' }}>{current.icon}</p>
+        <p style={{ color: '#a78bfa', fontSize: '22px', fontWeight: '700', margin: '0 0 4px' }}>{current.count}</p>
+        <p style={{ color: T.textSecondary, fontSize: '14px', margin: 0 }}>{current.prompt}</p>
+      </div>
+
+      <textarea
+        rows={2}
+        value={responses[stepIdx]}
+        onChange={e => setResponses(r => r.map((v, i) => i === stepIdx ? e.target.value : v))}
+        placeholder={`Name ${current.count} thing${current.count > 1 ? 's' : ''} you can ${current.sense}…`}
+        style={{
+          width: '100%', padding: '12px', borderRadius: '12px', resize: 'none',
+          background: T.surface, border: `1px solid ${T.border}`,
+          color: T.textPrimary, fontSize: '14px', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
+        }}
+      />
+
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-        {steps.map((s, i) => (
+        {steps.map((_, i) => (
           <div key={i} style={{
-            width: i === stepIdx ? '24px' : '8px', height: '8px', borderRadius: '4px',
+            width: i === stepIdx ? '20px' : '6px', height: '6px', borderRadius: '3px',
             background: i < stepIdx ? T.green : i === stepIdx ? T.accent : T.border,
-            transition: 'all 0.3s ease',
+            transition: 'all 0.3s',
           }} />
         ))}
       </div>
 
-      {/* Sense card */}
-      <div style={{
-        padding: '20px', borderRadius: '16px',
-        background: T.elevated, border: `1px solid ${T.borderHov}`,
-        textAlign: 'center',
-      }}>
-        <p style={{ fontSize: '36px', margin: '0 0 8px' }}>{step.icon}</p>
-        <p style={{ color: T.textPrimary, fontSize: '18px', fontWeight: '700', margin: '0 0 6px' }}>
-          {step.count - items.length} more to go
-        </p>
-        <p style={{ color: T.textSecondary, fontSize: '14px', margin: 0, lineHeight: 1.6 }}>{step.prompt}</p>
-      </div>
-
-      {/* Items so far */}
-      {items.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          {items.map((item, i) => (
-            <span key={i} style={{
-              padding: '6px 14px', borderRadius: '20px', fontSize: '13px',
-              background: T.accentSoft, border: `1px solid ${T.borderHov}`,
-              color: T.textSecondary,
-            }}>{item}</span>
-          ))}
-        </div>
-      )}
-
-      {/* Input */}
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <input
-          value={current}
-          onChange={e => setCurrent(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') addItem(); }}
-          placeholder={`Name something you can ${step.sense}…`}
-          style={{
-            flex: 1, padding: '12px 16px', borderRadius: '12px',
-            background: T.surface, border: `1px solid ${T.border}`,
-            color: T.textPrimary, fontSize: '14px', outline: 'none', fontFamily: 'inherit',
-          }}
-          autoFocus
-        />
-        <button onClick={addItem} style={{
-          width: '44px', height: '44px', borderRadius: '12px', border: 'none',
-          background: T.accent, color: '#fff', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      {stepIdx < steps.length - 1 ? (
+        <button onClick={() => setStepIdx(i => i + 1)} style={{
+          padding: '14px', borderRadius: '14px', border: 'none',
+          background: T.accent, color: '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
         }}>
-          <ArrowRight style={{ width: 18, height: 18 }} />
+          Next <ChevronRight style={{ width: 16, height: 16 }} />
         </button>
-      </div>
+      ) : (
+        <button onClick={() => setDone(true)} style={{
+          padding: '14px', borderRadius: '14px', border: 'none',
+          background: T.green, color: '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+        }}>Complete</button>
+      )}
     </div>
   );
 }
@@ -1176,121 +1498,65 @@ function GroundingExercise({ config, onComplete }: { config: ExerciseConfig; onC
 // THOUGHT RECORD
 // ══════════════════════════════════════════════════════════════════════════
 
-function ThoughtRecordExercise({ config, onComplete }: { config: ExerciseConfig; onComplete: (r: any) => void }) {
+function ThoughtRecordExercise({ config, anxietyPre, onComplete }: { config: ExerciseConfig; anxietyPre: number; onComplete: (r: any) => void }) {
   const fields = config.fields || [];
-  const [fieldIdx, setFieldIdx] = useState(0);
-  const [responses, setResponses] = useState<Record<string, any>>({});
-  const [current, setCurrent] = useState<any>('');
-  const [done, setDone] = useState(false);
-  const [anxietyPost, setAnxietyPost] = useState(5);
+  const [responses, setResponses]     = useState<Record<string, any>>({});
+  const [anxietyPost, setAnxietyPost] = useState(anxietyPre);
 
-  const field = fields[fieldIdx];
-
-  const advance = () => {
-    const newResponses = { ...responses, [field.id]: current };
-    setResponses(newResponses);
-    if (fieldIdx < fields.length - 1) {
-      setFieldIdx(f => f + 1);
-      setCurrent(responses[fields[fieldIdx + 1]?.id] ?? (fields[fieldIdx + 1]?.type === 'slider' ? 50 : ''));
-    } else {
-      setDone(true);
-    }
-  };
-
-  useEffect(() => {
-    if (field) setCurrent(responses[field.id] ?? (field.type === 'slider' ? 50 : ''));
-  }, [fieldIdx]);
-
-  if (done) {
-    return (
-      <AnxietyPostSlider
-        label="How does that thought feel now?"
-        initial={anxietyPost}
-        onChange={setAnxietyPost}
-        onSubmit={() => onComplete({ anxiety_post: anxietyPost, responses })}
-      />
-    );
-  }
+  const update = (id: string, val: any) => setResponses(r => ({ ...r, [id]: val }));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* Progress */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <div style={{
-          flex: 1, height: '3px', borderRadius: '2px',
-          background: T.border, overflow: 'hidden',
-        }}>
-          <div style={{
-            width: `${((fieldIdx) / fields.length) * 100}%`,
-            height: '100%', background: T.accent, transition: 'width 0.4s ease',
-          }} />
-        </div>
-        <span style={{ color: T.textMuted, fontSize: '11px' }}>{fieldIdx + 1}/{fields.length}</span>
-      </div>
-
-      {/* Field */}
-      <div style={{
-        padding: '20px', borderRadius: '16px',
-        background: T.elevated, border: `1px solid ${T.border}`,
-      }}>
-        <p style={{ color: T.textSecondary, fontSize: '13px', margin: '0 0 14px', lineHeight: 1.6 }}>{field.label}</p>
-
-        {field.type === 'textarea' ? (
-          <textarea
-            value={current}
-            onChange={e => setCurrent(e.target.value)}
-            rows={field.rows || 3}
-            placeholder={field.placeholder || ''}
-            autoFocus
-            style={{
-              width: '100%', padding: '12px', borderRadius: '10px',
-              background: T.surface, border: `1px solid ${T.border}`,
-              color: T.textPrimary, fontSize: '14px', lineHeight: 1.6,
-              resize: 'vertical', outline: 'none', fontFamily: 'inherit',
-              boxSizing: 'border-box',
-            }}
-          />
-        ) : field.type === 'text' ? (
-          <input
-            value={current}
-            onChange={e => setCurrent(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') advance(); }}
-            placeholder={field.placeholder || ''}
-            autoFocus
-            style={{
-              width: '100%', padding: '12px', borderRadius: '10px',
-              background: T.surface, border: `1px solid ${T.border}`,
-              color: T.textPrimary, fontSize: '14px', outline: 'none',
-              fontFamily: 'inherit', boxSizing: 'border-box',
-            }}
-          />
-        ) : field.type === 'slider' ? (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-              <span style={{ color: T.textMuted, fontSize: '12px' }}>{field.min ?? 0}{field.unit || ''}</span>
-              <span style={{ color: T.textPrimary, fontSize: '18px', fontWeight: '700' }}>{current}{field.unit || ''}</span>
-              <span style={{ color: T.textMuted, fontSize: '12px' }}>{field.max ?? 100}{field.unit || ''}</span>
-            </div>
-            <input
-              type="range"
-              min={field.min ?? 0}
-              max={field.max ?? 100}
-              step={field.step ?? 5}
-              value={current}
-              onChange={e => setCurrent(Number(e.target.value))}
-              style={{ width: '100%', accentColor: T.accent }}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {fields.map(f => (
+        <div key={f.id}>
+          <p style={{ color: T.textSecondary, fontSize: '13px', margin: '0 0 8px', lineHeight: 1.4 }}>{f.label}</p>
+          {f.type === 'textarea' ? (
+            <textarea
+              rows={f.rows || 2}
+              value={responses[f.id] || ''}
+              onChange={e => update(f.id, e.target.value)}
+              placeholder={f.placeholder}
+              style={{
+                width: '100%', padding: '12px', borderRadius: '12px', resize: 'none',
+                background: T.surface, border: `1px solid ${T.border}`,
+                color: T.textPrimary, fontSize: '14px', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
+              }}
             />
-          </div>
-        ) : null}
-      </div>
+          ) : f.type === 'slider' ? (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ color: T.textMuted, fontSize: '11px' }}>0</span>
+                <span style={{ color: T.textPrimary, fontSize: '15px', fontWeight: '700' }}>{responses[f.id] ?? 50}{f.unit}</span>
+                <span style={{ color: T.textMuted, fontSize: '11px' }}>100</span>
+              </div>
+              <input
+                type="range" min={f.min ?? 0} max={f.max ?? 100} step={f.step ?? 5}
+                value={responses[f.id] ?? 50}
+                onChange={e => update(f.id, Number(e.target.value))}
+                style={{ width: '100%', accentColor: T.accent }}
+              />
+            </div>
+          ) : (
+            <input
+              value={responses[f.id] || ''}
+              onChange={e => update(f.id, e.target.value)}
+              placeholder={f.placeholder}
+              style={{
+                width: '100%', padding: '12px', borderRadius: '12px',
+                background: T.surface, border: `1px solid ${T.border}`,
+                color: T.textPrimary, fontSize: '14px', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
+              }}
+            />
+          )}
+        </div>
+      ))}
 
-      <button onClick={advance} style={{
+      <AnxietyPostSlider label="How do you feel now?" initial={anxietyPre} onChange={setAnxietyPost} showSubmit={false} onSubmit={() => {}} />
+
+      <button onClick={() => onComplete({ responses, anxiety_post: anxietyPost })} style={{
         padding: '14px', borderRadius: '14px', border: 'none',
-        background: T.accent, color: '#fff', fontSize: '15px', fontWeight: '700',
-        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-      }}>
-        {fieldIdx < fields.length - 1 ? 'Next' : 'Finish'} <ChevronRight style={{ width: 16, height: 16 }} />
-      </button>
+        background: T.accent, color: '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+      }}>Submit record</button>
     </div>
   );
 }
@@ -1299,185 +1565,72 @@ function ThoughtRecordExercise({ config, onComplete }: { config: ExerciseConfig;
 // BODY SCAN
 // ══════════════════════════════════════════════════════════════════════════
 
-function BodyScanExercise({ config, onComplete }: { config: ExerciseConfig; onComplete: (r: any) => void }) {
-  const zones    = config.zones || [];
-  const [zoneIdx, setZoneIdx]         = useState(0);
-  const [ratings, setRatings]         = useState<Record<string, number>>({});
-  const [currentRating, setCurrentRating] = useState(5);
-  const [done, setDone]               = useState(false);
-  const [anxietyPost, setAnxietyPost] = useState(5);
+function BodyScanExercise({ config, anxietyPre, onComplete }: { config: ExerciseConfig; anxietyPre: number; onComplete: (r: any) => void }) {
+  const zones   = config.zones || [];
+  const scale   = config.tension_scale || { min: 0, max: 10, label: 'Tension level' };
+  const [ratings, setRatings]         = useState<Record<string, number>>(Object.fromEntries(zones.map(z => [z.id, 5])));
   const [notes, setNotes]             = useState('');
+  const [anxietyPost, setAnxietyPost] = useState(anxietyPre);
+  const [activeZone, setActiveZone]   = useState(zones[0]?.id || '');
 
-  const zone = zones[zoneIdx];
-
-  const advance = () => {
-    const newRatings = { ...ratings, [zone.id]: currentRating };
-    setRatings(newRatings);
-    if (zoneIdx < zones.length - 1) {
-      setZoneIdx(z => z + 1);
-      setCurrentRating(5);
-    } else {
-      setDone(true);
-    }
-  };
-
-  if (done) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <AnxietyPostSlider
-          label="How relaxed does your body feel now?"
-          initial={anxietyPost}
-          onChange={setAnxietyPost}
-          onSubmit={() => onComplete({ anxiety_post: anxietyPost, zone_ratings: ratings, notes })}
-          showSubmit={false}
-        />
-        <textarea
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          placeholder="Any observations about your body…"
-          rows={2}
-          style={{
-            width: '100%', padding: '12px', borderRadius: '10px',
-            background: T.surface, border: `1px solid ${T.border}`,
-            color: T.textPrimary, fontSize: '14px', resize: 'none',
-            outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
-          }}
-        />
-        <button onClick={() => onComplete({ anxiety_post: anxietyPost, zone_ratings: ratings, notes })} style={{
-          padding: '14px', borderRadius: '14px', border: 'none',
-          background: T.accent, color: '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer',
-        }}>Done</button>
-      </div>
-    );
-  }
-
-  // Simple silhouette using emoji as zone indicators
-  const zoneEmoji: Record<string, string> = { head: '🧠', neck: '🦒', chest: '❤️', abdomen: '🫁', arms: '💪', legs: '🦵' };
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* Zone dots */}
-      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
-        {zones.map((z, i) => (
-          <div key={i} style={{
-            width: '32px', height: '32px', borderRadius: '50%',
-            background: i < zoneIdx ? T.green : i === zoneIdx ? T.accent : T.border,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '14px', transition: 'all 0.3s',
-          }}>
-            {i < zoneIdx ? '✓' : i === zoneIdx ? (zoneEmoji[z.id] || '•') : ''}
-          </div>
-        ))}
-      </div>
-
-      <div style={{
-        padding: '24px', borderRadius: '16px',
-        background: T.elevated, border: `1px solid ${T.borderHov}`,
-        textAlign: 'center',
-      }}>
-        <p style={{ fontSize: '32px', margin: '0 0 8px' }}>{zoneEmoji[zone.id] || '•'}</p>
-        <p style={{ color: T.textPrimary, fontSize: '18px', fontWeight: '700', margin: '0 0 8px' }}>{zone.label}</p>
-        <p style={{ color: T.textSecondary, fontSize: '14px', margin: '0 0 20px', lineHeight: 1.6 }}>{zone.prompt}</p>
-
-        <p style={{ color: T.textMuted, fontSize: '12px', margin: '0 0 8px' }}>Tension level</p>
-        <p style={{ color: T.textPrimary, fontSize: '28px', fontWeight: '700', margin: '0 0 8px' }}>{currentRating}/10</p>
-        <input
-          type="range" min={0} max={10} step={1} value={currentRating}
-          onChange={e => setCurrentRating(Number(e.target.value))}
-          style={{ width: '100%', accentColor: currentRating >= 7 ? T.red : currentRating >= 4 ? T.amber : T.green }}
-        />
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
-          <span style={{ color: T.green, fontSize: '11px' }}>Relaxed</span>
-          <span style={{ color: T.red, fontSize: '11px' }}>Tense</span>
-        </div>
-      </div>
-
-      <button onClick={advance} style={{
-        padding: '14px', borderRadius: '14px', border: 'none',
-        background: T.accent, color: '#fff', fontSize: '15px', fontWeight: '700',
-        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-      }}>
-        {zoneIdx < zones.length - 1 ? 'Next zone' : 'Finish scan'} <ChevronRight style={{ width: 16, height: 16 }} />
-      </button>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// FEAR LADDER
-// ══════════════════════════════════════════════════════════════════════════
-
-function FearLadderExercise({ config, onComplete }: { config: ExerciseConfig; onComplete: (r: any) => void }) {
-  const stepCount = config.steps || 5;
-  const [steps, setSteps] = useState<FearStep[]>(
-    Array.from({ length: stepCount }, () => ({ situation: '', anxiety: 50 }))
-  );
-  const [notes, setNotes] = useState('');
-
-  const update = (i: number, field: keyof FearStep, value: any) => {
-    setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, [field]: value } : s));
-  };
-
-  const sorted = [...steps].sort((a, b) => a.anxiety - b.anxiety);
-  const filledCount = steps.filter(s => s.situation.trim()).length;
+  const current = zones.find(z => z.id === activeZone);
+  const activeIdx = zones.findIndex(z => z.id === activeZone);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      <p style={{ color: T.textSecondary, fontSize: '13px', margin: 0, lineHeight: 1.6 }}>
-        {config.message}
-      </p>
+      {/* Zone selector */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+        {zones.map(z => (
+          <button key={z.id} onClick={() => setActiveZone(z.id)} style={{
+            padding: '7px 13px', borderRadius: '100px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600',
+            background: z.id === activeZone ? T.accent : T.surface,
+            color: z.id === activeZone ? '#fff' : T.textSecondary,
+            border_: `1px solid ${z.id === activeZone ? 'transparent' : T.border}`,
+          }}>{z.label}</button>
+        ))}
+      </div>
 
-      {steps.map((step, i) => (
-        <div key={i} style={{
-          padding: '14px', borderRadius: '14px',
-          background: T.elevated, border: `1px solid ${T.border}`,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-            <div style={{
-              width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0,
-              background: step.situation.trim() ? T.accentSoft : T.border,
-              border: `1px solid ${step.situation.trim() ? T.borderHov : 'transparent'}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: T.textSecondary, fontSize: '11px', fontWeight: '700',
-            }}>{i + 1}</div>
-            <input
-              value={step.situation}
-              onChange={e => update(i, 'situation', e.target.value)}
-              placeholder={`Step ${i + 1}…`}
-              style={{
-                flex: 1, padding: '8px 12px', borderRadius: '8px',
-                background: T.surface, border: `1px solid ${T.border}`,
-                color: T.textPrimary, fontSize: '13px', outline: 'none', fontFamily: 'inherit',
-              }}
-            />
-            <span style={{
-              minWidth: '36px', textAlign: 'right', color: T.textPrimary,
-              fontSize: '13px', fontWeight: '700',
-            }}>{step.anxiety}</span>
+      {current && (
+        <div style={{ padding: '18px', borderRadius: '16px', background: T.elevated, border: `1px solid ${T.border}` }}>
+          <p style={{ color: T.textSecondary, fontSize: '13px', margin: '0 0 12px', lineHeight: 1.5 }}>{current.prompt}</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <span style={{ color: T.green, fontSize: '11px' }}>Relaxed</span>
+            <span style={{ color: T.textPrimary, fontSize: '15px', fontWeight: '700' }}>{ratings[current.id]}/10</span>
+            <span style={{ color: T.red, fontSize: '11px' }}>Tense</span>
           </div>
           <input
-            type="range" min={0} max={100} step={5} value={step.anxiety}
-            onChange={e => update(i, 'anxiety', Number(e.target.value))}
+            type="range" min={scale.min} max={scale.max} step={1} value={ratings[current.id]}
+            onChange={e => setRatings(r => ({ ...r, [current.id]: Number(e.target.value) }))}
             style={{ width: '100%', accentColor: T.accent }}
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
-            <span style={{ color: T.green, fontSize: '10px' }}>Easy</span>
-            <span style={{ color: T.red, fontSize: '10px' }}>Very hard</span>
-          </div>
+          {activeIdx < zones.length - 1 && (
+            <button onClick={() => setActiveZone(zones[activeIdx + 1].id)} style={{
+              marginTop: '12px', width: '100%', padding: '10px', borderRadius: '10px', border: 'none',
+              background: T.accentSoft, color: '#a78bfa', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+            }}>
+              Next zone <ChevronRight style={{ width: 14, height: 14 }} />
+            </button>
+          )}
         </div>
-      ))}
+      )}
 
-      <button
-        onClick={() => onComplete({ responses: sorted, notes })}
-        disabled={filledCount < 2}
+      <textarea
+        value={notes} onChange={e => setNotes(e.target.value)}
+        placeholder="Any sensations or observations…" rows={2}
         style={{
-          padding: '14px', borderRadius: '14px', border: 'none',
-          background: filledCount >= 2 ? T.accent : T.border,
-          color: '#fff', fontSize: '15px', fontWeight: '700',
-          cursor: filledCount >= 2 ? 'pointer' : 'not-allowed',
-        }}>
-        Save ladder ({filledCount}/{stepCount} filled)
-      </button>
+          width: '100%', padding: '12px', borderRadius: '12px', resize: 'none',
+          background: T.surface, border: `1px solid ${T.border}`,
+          color: T.textPrimary, fontSize: '14px', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
+        }}
+      />
+
+      <AnxietyPostSlider label="How does your body feel now?" initial={anxietyPre} onChange={setAnxietyPost} showSubmit={false} onSubmit={() => {}} />
+
+      <button onClick={() => onComplete({ zone_ratings: ratings, notes, anxiety_post: anxietyPost })} style={{
+        padding: '14px', borderRadius: '14px', border: 'none',
+        background: T.accent, color: '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+      }}>Complete scan</button>
     </div>
   );
 }
@@ -1486,36 +1639,28 @@ function FearLadderExercise({ config, onComplete }: { config: ExerciseConfig; on
 // VALUES COMPASS
 // ══════════════════════════════════════════════════════════════════════════
 
-function ValuesCompassExercise({ config, onComplete }: { config: ExerciseConfig; onComplete: (r: any) => void }) {
+function ValuesCompassExercise({ config, anxietyPre, onComplete }: { config: ExerciseConfig; anxietyPre: number; onComplete: (r: any) => void }) {
   const domains = config.domains || [];
   const [ratings, setRatings] = useState<Record<string, { importance: number; living_it: number }>>(
     Object.fromEntries(domains.map(d => [d, { importance: 5, living_it: 5 }]))
   );
   const [notes, setNotes] = useState('');
 
-  const update = (domain: string, field: 'importance' | 'living_it', value: number) => {
-    setRatings(prev => ({ ...prev, [domain]: { ...prev[domain], [field]: value } }));
-  };
+  const update = (domain: string, field: 'importance' | 'living_it', val: number) =>
+    setRatings(r => ({ ...r, [domain]: { ...r[domain], [field]: val } }));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      <p style={{ color: T.textSecondary, fontSize: '13px', margin: 0, lineHeight: 1.6 }}>
-        {config.message}
-      </p>
-
       {domains.map(domain => {
         const r   = ratings[domain] || { importance: 5, living_it: 5 };
         const gap = r.importance - r.living_it;
         return (
-          <div key={domain} style={{
-            padding: '14px 16px', borderRadius: '14px',
-            background: T.elevated, border: `1px solid ${gap > 3 ? T.borderHov : T.border}`,
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <p style={{ color: T.textPrimary, fontSize: '14px', fontWeight: '600', margin: 0 }}>{domain}</p>
-              {gap > 3 && <span style={{
-                fontSize: '10px', padding: '2px 8px', borderRadius: '10px',
-                background: T.accentSoft, color: '#a78bfa', fontWeight: '700',
+          <div key={domain} style={{ padding: '14px', borderRadius: '14px', background: T.elevated, border: `1px solid ${T.border}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', alignItems: 'center' }}>
+              <span style={{ color: T.textPrimary, fontSize: '13px', fontWeight: '600' }}>{domain}</span>
+              {gap > 2 && <span style={{
+                padding: '2px 8px', borderRadius: '100px', fontSize: '10px', fontWeight: '700',
+                background: 'rgba(245,158,11,0.1)', color: T.amber, border: '1px solid rgba(245,158,11,0.2)',
               }}>Gap</span>}
             </div>
             <div style={{ display: 'flex', gap: '12px' }}>
@@ -1548,30 +1693,23 @@ function ValuesCompassExercise({ config, onComplete }: { config: ExerciseConfig;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// SAFE PLACE VISUALISATION
+// SAFE PLACE
 // ══════════════════════════════════════════════════════════════════════════
 
-function SafePlaceExercise({ config, onComplete }: { config: ExerciseConfig; onComplete: (r: any) => void }) {
-  const prompts    = config.prompts || [];
-  const [promptIdx, setPromptIdx]       = useState(0);
-  const [placeName, setPlaceName]       = useState('');
-  const [description, setDescription]  = useState('');
-  const [anxietyPost, setAnxietyPost]   = useState(5);
-  const [done, setDone]                 = useState(false);
+function SafePlaceExercise({ config, anxietyPre, onComplete }: { config: ExerciseConfig; anxietyPre: number; onComplete: (r: any) => void }) {
+  const prompts = config.prompts || [];
+  const [promptIdx, setPromptIdx]     = useState(0);
+  const [placeName, setPlaceName]     = useState('');
+  const [description, setDescription] = useState('');
+  const [anxietyPost, setAnxietyPost] = useState(anxietyPre);
+  const [done, setDone]               = useState(false);
 
   if (done) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <AnxietyPostSlider
-          label="How calm do you feel now?"
-          initial={anxietyPost}
-          onChange={setAnxietyPost}
-          onSubmit={() => onComplete({ anxiety_post: anxietyPost, place_name: placeName, description })}
-          showSubmit={false}
-        />
+        <AnxietyPostSlider label="How calm do you feel now?" initial={anxietyPre} onChange={setAnxietyPost} showSubmit={false} onSubmit={() => {}} />
         <input
-          value={placeName}
-          onChange={e => setPlaceName(e.target.value)}
+          value={placeName} onChange={e => setPlaceName(e.target.value)}
           placeholder="Give this place a name…"
           style={{
             padding: '12px', borderRadius: '10px',
@@ -1580,15 +1718,12 @@ function SafePlaceExercise({ config, onComplete }: { config: ExerciseConfig; onC
           }}
         />
         <textarea
-          value={description}
-          onChange={e => setDescription(e.target.value)}
-          placeholder="Describe it in a few words…"
-          rows={2}
+          value={description} onChange={e => setDescription(e.target.value)}
+          placeholder="Describe it in a few words…" rows={2}
           style={{
             padding: '12px', borderRadius: '10px',
             background: T.surface, border: `1px solid ${T.border}`,
-            color: T.textPrimary, fontSize: '14px', resize: 'none',
-            outline: 'none', fontFamily: 'inherit',
+            color: T.textPrimary, fontSize: '14px', resize: 'none', outline: 'none', fontFamily: 'inherit',
           }}
         />
         <button onClick={() => onComplete({ anxiety_post: anxietyPost, place_name: placeName, description })} style={{
@@ -1601,7 +1736,6 @@ function SafePlaceExercise({ config, onComplete }: { config: ExerciseConfig; onC
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Soft ambient card */}
       <div style={{
         padding: '28px 24px', borderRadius: '20px',
         background: 'linear-gradient(135deg, rgba(124,58,237,0.12), rgba(14,165,233,0.08))',
@@ -1627,8 +1761,7 @@ function SafePlaceExercise({ config, onComplete }: { config: ExerciseConfig; onC
       {promptIdx < prompts.length - 1 ? (
         <button onClick={() => setPromptIdx(p => p + 1)} style={{
           padding: '14px', borderRadius: '14px', border: 'none',
-          background: T.accentSoft, border_: `1px solid ${T.borderHov}`,
-          color: '#a78bfa', fontSize: '15px', fontWeight: '700', cursor: 'pointer',
+          background: T.accentSoft, color: '#a78bfa', fontSize: '15px', fontWeight: '700', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
         }}>
           Next <ChevronRight style={{ width: 16, height: 16 }} />
@@ -1682,31 +1815,6 @@ function AnxietyPostSlider({ label, initial, onChange, onSubmit, showSubmit = tr
           background: T.accent, color: '#fff', fontSize: '15px', fontWeight: '700', cursor: 'pointer',
         }}>Done</button>
       )}
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// SHARED: SUMMARY CARD
-// ══════════════════════════════════════════════════════════════════════════
-
-function SummaryCard({ label, value, color, colorSoft, icon, italic = false }: {
-  label: string; value: string; color: string; colorSoft: string; icon: string; italic?: boolean;
-}) {
-  return (
-    <div style={{
-      padding: '14px 16px', borderRadius: '14px', background: colorSoft,
-      border: `1px solid ${color}22`, marginBottom: '12px',
-    }}>
-      <p style={{ color, fontSize: '10px', margin: '0 0 5px', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: '700' }}>
-        {icon} {label}
-      </p>
-      <p style={{
-        color: 'rgba(240,236,255,0.85)', fontSize: '14px', margin: 0,
-        lineHeight: 1.6, fontStyle: italic ? 'italic' : 'normal',
-      }}>
-        {italic ? `"${value}"` : value}
-      </p>
     </div>
   );
 }

@@ -47,6 +47,7 @@ import { runStyledOverviewTour } from './joyride';
 import EyeContactTrainer from 'src/components/07';
 import Day1Navigator from "src/components/DAY_01/MAINNAVIGATOR";
 import DailyHub from 'src/components/09';
+import DailyInsights from 'src/components/10';
 
 const randomIndex = Math.floor(Math.random() * avatars.length);
 const selectedAvatar = avatars[randomIndex];
@@ -133,20 +134,7 @@ export function OverviewAnalyticsView() {
     analyzeUserStatus();
   }, [user]);
 
-  useEffect(() => {
-    if (!user) return;
-    const checkDatedCourses = async () => {
-      const docRef = doc(db, `users/${user.uid}/datedcourses`, 'life_skills');
-      const docSnap = await getDoc(docRef);
-      if (!docSnap.exists()) {
-        setShowOverlay(true);
-        setTimeout(() => {
-          window.location.href = `/conversation/${user.uid}`;
-        }, 3000);
-      }
-    };
-    checkDatedCourses();
-  }, [user]);
+ 
 
   useEffect(() => {
     const seen = localStorage.getItem("supportHubTourSeen");
@@ -236,18 +224,7 @@ export function OverviewAnalyticsView() {
       `}</style>
 
       {/* ── No Plan Found Overlay ── */}
-      {showOverlay && (
-        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/90 text-white p-6 text-center">
-          <h1 className="text-4xl font-bold mb-4">No Plan Found</h1>
-          <p className="text-lg mb-6">Go create your plan to get started!</p>
-          <button
-            className="px-6 py-3 bg-purple-600 rounded-lg hover:bg-purple-700 transition"
-            onClick={() => window.location.href = `/conversation/${user.uid}`}
-          >
-            Create Your Plan
-          </button>
-        </div>
-      )}
+  
 
       {/* ── Onboarding Overlay ── */}
       {showOnboarding && (
@@ -321,6 +298,9 @@ export function OverviewAnalyticsView() {
   {/* Mentor Card */}
   
 
+  <DailyInsights userId={user?.uid} />
+
+  
   {/* Today's Lesson */}
   <div className="mt-8 tour-today-action-card" id="resume-lesson">
     <TodayLessonHero
